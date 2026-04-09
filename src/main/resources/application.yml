@@ -63,6 +63,13 @@ minio:
   secret-key: ${MINIO_SECRET_KEY}
   bucket: ${MINIO_BUCKET:document-bucket}
 
+upload:
+  storage:
+    # Maximum concurrent MinIO uploads. Each slot consumes ~5 MB of heap (one part buffer).
+    # 3 slots = 15 MB peak; leaves ~35 MB for the rest of the JVM working set.
+    # Tune based on load test results — see ADR-007.
+    max-concurrent: 3
+
 logging:
   level:
     root: WARN
