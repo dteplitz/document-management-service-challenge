@@ -1,0 +1,11 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+upload:
+  storage:
+    # Use a single slot in tests to keep heap pressure low and avoid flakiness.
+    # The concurrent test still exercises 10 parallel requests; they just queue
+    # at the semaphore, which is intentional (correctness, not throughput, is tested).
+    max-concurrent: 1
