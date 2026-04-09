@@ -35,4 +35,11 @@ build/
 ### Claude Code (project-level personal tooling, not part of the deliverable) ###
 CLAUDE.md
 .claude/
+
+### Secrets & local runtime ###
 .env
+*.pem
+*.key
+logs/
+*.log
+/tmp/multipart/
