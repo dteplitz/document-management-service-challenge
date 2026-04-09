@@ -244,7 +244,7 @@ same `user` and `name`.
 
 ---
 
-## ADR-006 — Memory constraint interpretation: strict 50MB total container
+## ADR-006 — Memory constraint interpretation: strict 50MB JVM heap, container sized for JVM overhead
 
 **Status:** Accepted
 **Date:** 2026-04-09
@@ -253,35 +253,73 @@ same `user` and `name`.
 
 The challenge specifies a 50MB memory limit for the document management
 service. The exact scope of this limit drives many downstream design
-decisions, so it must be pinned down explicitly before implementation begins.
+decisions (streaming strategy, MinIO part size, JPA caching), so it must
+be pinned down explicitly before implementation begins.
+
+The spec contains a tension that must be resolved:
+
+1. **Overview section** states: *"a memory limitation of 50MB assigned to
+   the document management service container"* — suggesting the **container**
+   as the boundary.
+2. **Example `docker-compose.yml`** snippet sets BOTH `-Xmx50m -Xms50m`
+   AND `deploy.resources.limits.memory: 50M` simultaneously — suggesting
+   the heap AND the container are both capped at 50MB.
+3. **Spring Boot + Spring Data JPA + Hibernate + Tomcat + MinIO SDK** on
+   HotSpot JVM has a minimum RSS floor that exceeds 50MB by a large margin,
+   making interpretation (2) physically infeasible.
+
+This was empirically validated during Slice 0 plumbing: a container
+configured with both `-Xmx50m` and `memory: 50M` was SIGKILL'd by the
+kernel before the Spring application context finished loading
+(`OOMKilled: true`, exit code 137, ~1 second into startup).
 
 ### Decision
 
-We adopt the **strict literal reading** of the spec: the container is hard-
-capped at 50MB total memory **and** the JVM heap is also capped at 50MB
-(`-Xmx50m -Xms50m`). Both limits are honored simultaneously, exactly as
-shown in the example snippet provided in the challenge `docker-compose.yml`.
+The **JVM heap is strictly capped at 50MB** (`-Xmx50m -Xms50m`). The
+**container memory limit is raised to 384MB** to accommodate unavoidable
+JVM overhead. The heap — not the container total — is the constraint
+that actually governs the streaming upload pipeline.
 
 ### Rationale
 
-- The challenge README (Overview section) describes the limit as
-  "a memory limitation of 50MB assigned to the document management service
-  **container**" — explicitly using the word "container".
-- The example snippet in the provided `docker-compose.yml` sets BOTH
-  `JAVA_OPTS=-Xmx50m -Xms50m` AND `deploy.resources.limits.memory: 50M`
-  simultaneously. There is no ambiguity in the example.
-- This is the strictest reasonable reading. Designing for it automatically
-  satisfies any looser interpretation, while the reverse is not true.
-- The 50MB constraint is the **core technical challenge** of the exercise.
-  Treating it as anything less than literal would defeat the purpose of
-  the evaluation.
+The core technical objective stated in the spec is:
+
+> *"efficiently manage memory during file upload and processing, even
+> when handling uploads of files up to 500MB"*
+
+The real evaluation target is: **during a 500MB upload, the heap does
+not explode**. The container memory limit in the example is an imprecise
+proxy for that objective. With HotSpot JVM, the proxy breaks down:
+
+| JVM component | Minimum footprint |
+|---------------|-------------------|
+| Heap (`-Xmx50m`)                         | 50 MB |
+| Metaspace (Spring + Hibernate classes)   | ~40 MB |
+| Code cache (JIT compiled methods)        | ~20 MB |
+| Direct buffers (Tomcat NIO)              | ~10 MB |
+| Thread stacks (~20 threads × 256 KB)     | ~5 MB |
+| JVM internal                             | ~15 MB |
+| **Total RSS minimum**                    | **~140–180 MB** |
+
+A container limit of 50MB kills the process before Spring finishes its
+initialization. A container limit of 384MB gives comfortable headroom
+while keeping the heap strict, which is the constraint that matters for
+the streaming pipeline.
+
+Streaming 500MB through a 50MB heap requires exactly the same engineering
+discipline as streaming 500MB through a 50MB container — the heap is
+what bounds the per-request memory footprint, and the heap is what we
+keep strict.
 
 ### Consequences
 
-- After accounting for JVM metaspace, thread stacks, code cache, and direct
-  buffers, the actual usable heap is approximately **20–25MB**. The
-  application must be designed to operate within this budget.
-- All file I/O must be **fully streamed end-to-end**. Files are never
+- `JAVA_OPTS=-Xmx50m -Xms50m` remains unchanged. The heap is the real
+  constraint of the challenge and is honored literally.
+- `deploy.resources.limits.memory: 384M` on the Java service in
+  `docker/docker-compose.yml`. This diverges literally from the commented
+  example in the original `docker-compose.yml` but is the only feasible
+  configuration with HotSpot JVM and this stack.
+- **All file I/O must be fully streamed end-to-end.** Files are never
   materialized in heap — they flow through small fixed-size byte buffers
   from the disk-backed multipart temp file directly into the MinIO SDK
   stream, and from MinIO directly back to the client via pre-signed URL
@@ -301,6 +339,8 @@ shown in the example snippet provided in the challenge `docker-compose.yml`.
 - A small disk-temp footprint (~5GB worst case for 10 concurrent 500MB
   uploads) is the explicit trade-off accepted to keep the heap budget
   intact. The container must be provisioned with adequate ephemeral disk.
+- This interpretation is pending confirmation with the evaluator — see
+  Open Question #2 below.
 
 ---
 
@@ -314,3 +354,37 @@ field. This question has been forwarded to the evaluator via the recruiter
 (Erika Cervantes) for confirmation. Implementation proceeds based on the
 multipart assumption; if the evaluator confirms a different contract, the
 relevant adapter will be adjusted.
+
+### [OPEN QUESTION #2] — Memory constraint interpretation
+
+**Status:** Not yet forwarded. To be included in the next communication
+with the evaluator, alongside (or after) their response to Open Question #1.
+
+See ADR-006. The spec combines two statements that are in tension:
+
+1. *"a memory limitation of 50MB assigned to the document management
+   service container"* (Overview section).
+2. An example `docker-compose.yml` that sets BOTH `-Xmx50m -Xms50m` AND
+   `deploy.resources.limits.memory: 50M` simultaneously.
+
+Empirically, Spring Boot + Spring Data JPA + Hibernate + Tomcat + MinIO SDK
+on HotSpot JVM cannot boot inside a 50MB container — the kernel SIGKILLs
+the process before the Spring context finishes loading (measured during
+Slice 0 plumbing). Minimum RSS floor is ~140–180MB.
+
+Our interpretation (ADR-006): keep the **JVM heap strict at 50MB**
+(`-Xmx50m -Xms50m`) because the heap is what actually governs the
+streaming upload pipeline, and raise the **container limit to 384MB** to
+give the JVM its unavoidable overhead. The real objective of the
+challenge — *"efficiently manage memory during file upload and
+processing, even when handling uploads of files up to 500MB"* — is
+honored by the heap constraint, not by the container limit.
+
+Confirmation to request from the evaluator:
+- Does this interpretation match the challenge's intent, or did they
+  expect GraalVM Native Image (which would fit the literal 50MB container)?
+- If neither, what was the expected runtime shape?
+
+Implementation proceeds on the ADR-006 interpretation. If the evaluator
+mandates a different reading, the runtime configuration will be adjusted
+(container limit and/or migration to native image).
