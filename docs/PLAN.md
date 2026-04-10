@@ -199,7 +199,12 @@ sorting.
 
 **Dependencies:** Slice 1 must be closed (need data to search).
 
-**Retrospective:** _filled after slice closes._
+**Retrospective:** Closed 2026-04-10. All tests green (unit + 10 integration tests). One compilation
+error during build: `HibernateCriteriaBuilder.arrayContains` was called with a `String[]` literal
+instead of a single `String` — the correct approach is one `arrayContains` call per tag, ANDed
+together, which Hibernate maps to per-element `array_contains` calls that each hit the GIN index.
+No architectural surprises; JPA Specifications with `JpaSpecificationExecutor` composed cleanly
+with the existing hexagonal structure.
 
 ---
 
