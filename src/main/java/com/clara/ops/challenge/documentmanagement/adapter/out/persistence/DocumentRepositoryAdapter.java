@@ -5,6 +5,9 @@ import com.clara.ops.challenge.documentmanagement.domain.Document;
 import java.util.Arrays;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -34,6 +37,21 @@ public class DocumentRepositoryAdapter implements DocumentRepository {
     entity.setFileSize(document.fileSize());
     entity.setFileType(document.fileType());
     return entity;
+  }
+
+  @Override
+  public Page<Document> search(String user, String name, List<String> tags, Pageable pageable) {
+    Specification<DocumentEntity> spec = Specification.where(null);
+    if (user != null) {
+      spec = spec.and(DocumentSpecifications.hasUser(user));
+    }
+    if (name != null) {
+      spec = spec.and(DocumentSpecifications.hasName(name));
+    }
+    if (tags != null && !tags.isEmpty()) {
+      spec = spec.and(DocumentSpecifications.hasAllTags(tags));
+    }
+    return jpaRepository.findAll(spec, pageable).map(this::toDomain);
   }
 
   private Document toDomain(DocumentEntity entity) {
