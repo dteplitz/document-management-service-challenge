@@ -115,7 +115,10 @@ functionality yet.
   settings. Will need to tune `-Xmx`, `-XX:MaxMetaspaceSize`, thread stack
   size, and possibly adjust the JVM distribution.
 
-**Retrospective:** _filled after slice closes._
+**Retrospective:** Closed. Stack boots cleanly. Key discovery: `memory: 50M` on the container is
+physically infeasible with HotSpot JVM + Spring Boot — the kernel OOM-kills the process before the
+application context finishes loading. Decision taken in ADR-006: keep heap strict at 50MB
+(`-Xmx50m`) and raise container limit to 384MB.
 
 ---
 
