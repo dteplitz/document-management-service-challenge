@@ -63,6 +63,10 @@ minio:
   access-key: ${MINIO_ACCESS_KEY}
   secret-key: ${MINIO_SECRET_KEY}
   bucket: ${MINIO_BUCKET:document-bucket}
+  # MinIO default region. Required for AWS Signature V4 pre-signed URL generation.
+  region: ${MINIO_REGION:us-east-1}
+  # TTL for pre-signed download URLs. Overridable via MINIO_PRESIGNED_URL_EXPIRY_SECONDS.
+  presigned-url-expiry-seconds: ${MINIO_PRESIGNED_URL_EXPIRY_SECONDS:900}
 
 upload:
   storage:

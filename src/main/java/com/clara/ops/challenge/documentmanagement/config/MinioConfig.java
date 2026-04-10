@@ -14,6 +14,7 @@ public class MinioConfig {
     return MinioClient.builder()
         .endpoint(props.endpoint())
         .credentials(props.accessKey(), props.secretKey())
+        .region(props.region())
         .build();
   }
 }

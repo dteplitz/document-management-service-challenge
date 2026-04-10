@@ -3,10 +3,13 @@ package com.clara.ops.challenge.documentmanagement.adapter.out.storage;
 import com.clara.ops.challenge.documentmanagement.application.port.out.DocumentStorage;
 import com.clara.ops.challenge.documentmanagement.config.MinioProperties;
 import com.clara.ops.challenge.documentmanagement.domain.exception.StorageException;
+import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
+import io.minio.http.Method;
 import java.io.InputStream;
+import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -36,6 +39,22 @@ public class MinioDocumentStorageAdapter implements DocumentStorage {
       log.debug("stored object at {}/{}", props.bucket(), storagePath);
     } catch (Exception e) {
       throw new StorageException("failed to store object at " + storagePath, e);
+    }
+  }
+
+  @Override
+  public String generatePresignedUrl(String storagePath) {
+    try {
+      return minioClient.getPresignedObjectUrl(
+          GetPresignedObjectUrlArgs.builder()
+              .method(Method.GET)
+              .bucket(props.bucket())
+              .object(storagePath)
+              .region(props.region())
+              .expiry(props.presignedUrlExpirySeconds(), TimeUnit.SECONDS)
+              .build());
+    } catch (Exception e) {
+      throw new StorageException("failed to generate pre-signed URL for " + storagePath, e);
     }
   }
 

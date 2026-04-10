@@ -4,6 +4,7 @@ import com.clara.ops.challenge.documentmanagement.application.port.out.DocumentR
 import com.clara.ops.challenge.documentmanagement.domain.Document;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -37,6 +38,11 @@ public class DocumentRepositoryAdapter implements DocumentRepository {
     entity.setFileSize(document.fileSize());
     entity.setFileType(document.fileType());
     return entity;
+  }
+
+  @Override
+  public Optional<Document> findById(Long id) {
+    return jpaRepository.findById(id).map(this::toDomain);
   }
 
   @Override
