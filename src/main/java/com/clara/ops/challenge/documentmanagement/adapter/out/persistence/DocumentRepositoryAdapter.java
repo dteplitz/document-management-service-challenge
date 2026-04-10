@@ -37,8 +37,7 @@ public class DocumentRepositoryAdapter implements DocumentRepository {
   }
 
   private Document toDomain(DocumentEntity entity) {
-    List<String> tags =
-        entity.getTags() != null ? Arrays.asList(entity.getTags()) : List.of();
+    List<String> tags = entity.getTags() != null ? Arrays.asList(entity.getTags()) : List.of();
     return new Document(
         entity.getId(),
         entity.getUser(),

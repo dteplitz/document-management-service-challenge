@@ -5,6 +5,4 @@ import jakarta.validation.constraints.NotNull;
 import java.util.List;
 
 public record UploadMetadataRequest(
-    @NotBlank String user,
-    @NotBlank String name,
-    @NotNull List<@NotBlank String> tags) {}
+    @NotBlank String user, @NotBlank String name, @NotNull List<@NotBlank String> tags) {}

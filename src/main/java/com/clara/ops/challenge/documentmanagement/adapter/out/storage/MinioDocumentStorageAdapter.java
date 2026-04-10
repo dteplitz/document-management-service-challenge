@@ -12,8 +12,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
+@RequiredArgsConstructor
 public class MinioDocumentStorageAdapter implements DocumentStorage {
 
   // S3 multipart minimum — determines per-upload heap footprint.
@@ -29,10 +29,8 @@ public class MinioDocumentStorageAdapter implements DocumentStorage {
       String storagePath, InputStream content, long contentLength, String contentType) {
     try {
       minioClient.putObject(
-          PutObjectArgs.builder()
-              .bucket(props.bucket())
-              .object(storagePath)
-              .stream(content, contentLength, PART_SIZE)
+          PutObjectArgs.builder().bucket(props.bucket()).object(storagePath).stream(
+                  content, contentLength, PART_SIZE)
               .contentType(contentType)
               .build());
       log.debug("stored object at {}/{}", props.bucket(), storagePath);
