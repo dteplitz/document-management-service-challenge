@@ -12,7 +12,7 @@
 	<artifactId>document-management-service-challenge</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>document-management-service-challenge</name>
-	<description>This project implements a file management system, integrates with simulated services (LocalStack for AWS S3), features centralized exception handling, and includes both unit and integration tests. Developed as a challenge to assess advanced skills in Java 8+, Spring Boot, testing, Docker containers and docker-compose, while adhering to design patterns and best coding practices.</description>
+	<description>Document Management Service — Clara backend challenge. Streaming upload pipeline for PDFs up to 500MB under a strict 50MB JVM heap budget. Files stored in MinIO (S3-compatible), metadata in PostgreSQL. Hexagonal architecture, Testcontainers integration tests, 10-concurrent-upload validation.</description>
 
 	<properties>
 		<java.version>17</java.version>
@@ -26,6 +26,10 @@
 		<googleJavaFormat.version>1.22.0</googleJavaFormat.version>
 
 		<minio.version>8.4.3</minio.version>
+		<!-- Override Spring Boot's managed Lombok version.
+		     JDK 25 removed TypeTag.UNKNOWN which Lombok 1.18.36 used internally.
+		     1.18.38 adds JDK 24 support; used as the fix for JDK 25 compat. -->
+		<lombok.version>1.18.38</lombok.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -50,13 +54,7 @@
 			<artifactId>minio</artifactId>
 			<version>${minio.version}</version>
 		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-devtools</artifactId>
-			<scope>runtime</scope>
-			<optional>true</optional>
-		</dependency>
-		<dependency>
+<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
 			<optional>true</optional>
@@ -94,16 +92,14 @@
 				<plugins>
 					<plugin>
 						<groupId>org.apache.maven.plugins</groupId>
-						<artifactId>maven-failsafe-plugin</artifactId>
-						<configuration>
-							<groups>heavy</groups>
-						</configuration>
-					</plugin>
-					<plugin>
-						<groupId>org.apache.maven.plugins</groupId>
 						<artifactId>maven-surefire-plugin</artifactId>
-						<configuration>
+						<!-- combine.self=override replaces the base surefire config entirely
+						     instead of merging. Without it, Maven inherits excludedGroups=heavy
+						     from the base config, which cancels groups=heavy → 0 tests. -->
+						<configuration combine.self="override">
 							<groups>heavy</groups>
+							<!-- @{argLine} preserves the JaCoCo agent injected by prepare-agent. -->
+							<argLine>@{argLine} -Duser.timezone=UTC -Xmx768m</argLine>
 						</configuration>
 					</plugin>
 				</plugins>
@@ -119,6 +115,13 @@
 				<artifactId>maven-surefire-plugin</artifactId>
 				<configuration>
 					<excludedGroups>heavy</excludedGroups>
+					<!-- Force UTC for the test JVM. Testcontainers' withInitScript opens
+					     a JDBC connection that ignores datasource URL params, so the driver
+					     sends the JVM's default TZ to Postgres. Legacy names like
+					     America/Buenos_Aires are not in PostgreSQL's tz database (it only
+					     knows America/Argentina/Buenos_Aires), which breaks the init.
+					     @{argLine} preserves the JaCoCo agent injected by prepare-agent. -->
+					<argLine>@{argLine} -Duser.timezone=UTC</argLine>
 				</configuration>
 			</plugin>
 			<plugin>
@@ -132,11 +135,6 @@
 						</path>
 					</annotationProcessorPaths>
 				</configuration>
-			</plugin>
-			<plugin>
-				<groupId>org.jacoco</groupId>
-				<artifactId>jacoco-maven-plugin</artifactId>
-				<version>0.8.8</version>
 			</plugin>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
@@ -153,12 +151,19 @@
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
+				<!-- 0.8.12: ASM 9.7, supports Java 24; needed for JDK 25 dev environment -->
+				<version>0.8.12</version>
 				<executions>
 					<execution>
 						<id>prepare-agent</id>
 						<goals>
 							<goal>prepare-agent</goal>
 						</goals>
+						<configuration>
+							<!-- Only instrument our classes; prevents JaCoCo from trying to
+							     instrument JDK 25 internal classes (unsupported by ASM 9.7). -->
+							<includes>com.clara.*</includes>
+						</configuration>
 					</execution>
 					<execution>
 						<id>report</id>
