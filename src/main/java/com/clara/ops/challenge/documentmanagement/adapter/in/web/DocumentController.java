@@ -1,10 +1,12 @@
 package com.clara.ops.challenge.documentmanagement.adapter.in.web;
 
+import com.clara.ops.challenge.documentmanagement.adapter.in.web.dto.DocumentDownloadUrlResponse;
 import com.clara.ops.challenge.documentmanagement.adapter.in.web.dto.DocumentResponse;
 import com.clara.ops.challenge.documentmanagement.adapter.in.web.dto.DocumentSearchFiltersRequest;
 import com.clara.ops.challenge.documentmanagement.adapter.in.web.dto.PaginatedDocumentSearchResponse;
 import com.clara.ops.challenge.documentmanagement.adapter.in.web.dto.PaginationMetadata;
 import com.clara.ops.challenge.documentmanagement.adapter.in.web.dto.UploadMetadataRequest;
+import com.clara.ops.challenge.documentmanagement.application.port.in.DownloadDocumentService;
 import com.clara.ops.challenge.documentmanagement.application.port.in.SearchDocumentQuery;
 import com.clara.ops.challenge.documentmanagement.application.port.in.SearchDocumentService;
 import com.clara.ops.challenge.documentmanagement.application.port.in.UploadDocumentCommand;
@@ -33,6 +35,7 @@ public class DocumentController {
 
   private final UploadDocumentService uploadDocumentService;
   private final SearchDocumentService searchDocumentService;
+  private final DownloadDocumentService downloadDocumentService;
 
   @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ResponseEntity<Void> upload(
@@ -78,6 +81,12 @@ public class DocumentController {
         result.getContent().stream().map(DocumentController::toResponse).toList();
 
     return ResponseEntity.ok(new PaginatedDocumentSearchResponse(metadata, documents));
+  }
+
+  @GetMapping("/download/{documentId}")
+  public ResponseEntity<DocumentDownloadUrlResponse> download(@PathVariable Long documentId) {
+    String url = downloadDocumentService.getDownloadUrl(documentId);
+    return ResponseEntity.ok(new DocumentDownloadUrlResponse(url));
   }
 
   private static DocumentResponse toResponse(Document doc) {
