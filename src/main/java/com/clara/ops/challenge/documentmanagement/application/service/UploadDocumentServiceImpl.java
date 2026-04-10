@@ -32,7 +32,8 @@ public class UploadDocumentServiceImpl implements UploadDocumentService {
   @Override
   public Document upload(UploadDocumentCommand cmd) {
     Document toCreate =
-        Document.newUpload(cmd.user(), cmd.name(), cmd.tags(), cmd.contentLength(), cmd.contentType());
+        Document.newUpload(
+            cmd.user(), cmd.name(), cmd.tags(), cmd.contentLength(), cmd.contentType());
 
     if (documentRepository.existsByUserAndName(cmd.user(), cmd.name())) {
       throw new DuplicateDocumentException(cmd.user(), cmd.name());
@@ -53,6 +54,10 @@ public class UploadDocumentServiceImpl implements UploadDocumentService {
       // this save. Compensate by removing the just-uploaded object from MinIO.
       safeDelete(toCreate.storagePath());
       throw new DuplicateDocumentException(cmd.user(), cmd.name());
+    } catch (RuntimeException e) {
+      // Any other DB failure after a successful MinIO write: clean up the orphan object.
+      safeDelete(toCreate.storagePath());
+      throw e;
     }
   }
 
@@ -60,7 +65,8 @@ public class UploadDocumentServiceImpl implements UploadDocumentService {
     try {
       documentStorage.delete(storagePath);
     } catch (Exception e) {
-      log.error("failed to delete orphan MinIO object at '{}' after duplicate conflict", storagePath, e);
+      log.error(
+          "failed to delete orphan MinIO object at '{}' during compensation", storagePath, e);
     }
   }
 }

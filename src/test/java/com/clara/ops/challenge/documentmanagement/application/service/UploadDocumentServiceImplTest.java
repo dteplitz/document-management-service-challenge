@@ -42,7 +42,15 @@ class UploadDocumentServiceImplTest {
   void upload_happyPath_storesAndPersists() {
     UploadDocumentCommand cmd = command("alice", "report.pdf");
     Document saved =
-        new Document(1L, "alice", "report.pdf", List.of(), "alice/report.pdf", 1024L, "application/pdf", Instant.now());
+        new Document(
+            1L,
+            "alice",
+            "report.pdf",
+            List.of(),
+            "alice/report.pdf",
+            1024L,
+            "application/pdf",
+            Instant.now());
     when(documentRepository.existsByUserAndName("alice", "report.pdf")).thenReturn(false);
     when(documentRepository.save(any())).thenReturn(saved);
 
