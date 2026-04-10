@@ -21,13 +21,20 @@ binary content is stored in MinIO with pre-signed URL access.
 
 ## API endpoints
 
-| Method | Path                                          | Description                          |
-|--------|-----------------------------------------------|--------------------------------------|
-| POST   | `/document-management/upload`                 | Upload a PDF (multipart/form-data)   |
-| POST   | `/document-management/search`                 | Search documents with filters        |
-| GET    | `/document-management/download/{documentId}`  | Get a pre-signed download URL        |
+| Method |                     Path                     |            Description             |
+|--------|----------------------------------------------|------------------------------------|
+| POST   | `/document-management/upload`                | Upload a PDF (multipart/form-data) |
+| POST   | `/document-management/search`                | Search documents with filters      |
+| GET    | `/document-management/download/{documentId}` | Get a pre-signed download URL      |
 
-_Curl examples — TBD, filled in Slice 4._
+## Implementation notes
+
+**Upload content type:** The provided OpenAPI specification defines the upload endpoint
+as `application/json`, but the schema contains no file field. The implementation uses
+`multipart/form-data` with two parts — a `metadata` JSON part and a `file` binary part —
+because base64-encoding a 500 MB PDF in a JSON body is incompatible with the 50 MB heap
+constraint. See [`docs/DECISIONS.md`](docs/DECISIONS.md) (ADR-001) for the full rationale.
+This interpretation has been forwarded to the evaluator for confirmation.
 
 ## How to run
 
@@ -45,7 +52,17 @@ file and adjust as needed:
 cp .env.example .env
 ```
 
-_Environment variable reference — TBD, filled in Slice 0._
+|        Variable        |                       Description                        |
+|------------------------|----------------------------------------------------------|
+| `POSTGRES_USER`        | PostgreSQL superuser (used by init scripts only)         |
+| `POSTGRES_PASSWORD`    | PostgreSQL superuser password                            |
+| `APP_DB_PASSWORD`      | Password for the `document_user` application role        |
+| `MINIO_ROOT_USER`      | MinIO root user (bootstrap init container only)          |
+| `MINIO_ROOT_PASSWORD`  | MinIO root password (bootstrap init container only)      |
+| `MINIO_APP_ACCESS_KEY` | MinIO service-account access key used by the application |
+| `MINIO_APP_SECRET_KEY` | MinIO service-account secret key used by the application |
+
+See `.env.example` for an annotated template with default values.
 
 ### Run the full stack
 
@@ -96,15 +113,6 @@ Requires Docker to be running.
 ./mvnw spotless:apply
 ```
 
-## Manual validation walkthrough
-
-_TBD — filled in Slice 4 with real curl examples for upload → search →
-download._
-
-## Project structure
-
-_TBD — filled in Slice 4 with the final hexagonal layout._
-
 ## Further documentation
 
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) — architecture decision records
@@ -112,8 +120,6 @@ _TBD — filled in Slice 4 with the final hexagonal layout._
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — technical reference covering
   the hexagonal layout, data model, streaming pipeline, and the critical "How
   memory is kept under 50MB" section.
-- [`docs/PLAN.md`](docs/PLAN.md) — implementation plan and slice
-  retrospectives.
 - [`docs/CHALLENGE.md`](docs/CHALLENGE.md) — the original challenge
   specification provided by Clara, preserved for reference.
 

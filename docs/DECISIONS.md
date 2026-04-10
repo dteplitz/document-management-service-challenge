@@ -285,21 +285,22 @@ that actually governs the streaming upload pipeline.
 The core technical objective stated in the spec is:
 
 > *"efficiently manage memory during file upload and processing, even
-> when handling uploads of files up to 500MB"*
+>
+>> when handling uploads of files up to 500MB"*
 
 The real evaluation target is: **during a 500MB upload, the heap does
 not explode**. The container memory limit in the example is an imprecise
 proxy for that objective. With HotSpot JVM, the proxy breaks down:
 
-| JVM component | Minimum footprint |
-|---------------|-------------------|
-| Heap (`-Xmx50m`)                         | 50 MB |
-| Metaspace (Spring + Hibernate classes)   | ~40 MB |
-| Code cache (JIT compiled methods)        | ~20 MB |
-| Direct buffers (Tomcat NIO)              | ~10 MB |
-| Thread stacks (~20 threads × 256 KB)     | ~5 MB |
-| JVM internal                             | ~15 MB |
-| **Total RSS minimum**                    | **~140–180 MB** |
+|             JVM component              | Minimum footprint |
+|----------------------------------------|-------------------|
+| Heap (`-Xmx50m`)                       | 50 MB             |
+| Metaspace (Spring + Hibernate classes) | ~40 MB            |
+| Code cache (JIT compiled methods)      | ~20 MB            |
+| Direct buffers (Tomcat NIO)            | ~10 MB            |
+| Thread stacks (~20 threads × 256 KB)   | ~5 MB             |
+| JVM internal                           | ~15 MB            |
+| **Total RSS minimum**                  | **~140–180 MB**   |
 
 A container limit of 50MB kills the process before Spring finishes its
 initialization. A container limit of 384MB gives comfortable headroom
@@ -408,6 +409,86 @@ storage-write step is serialised to 3 concurrent operations.
 
 ---
 
+## ADR-008 — Runtime timezone is UTC; local dev environment workarounds
+
+**Status:** Accepted
+**Date:** 2026-04-09
+
+### Context
+
+Two separate but intertwined issues surfaced during Slice 1
+implementation on Damian's local machine:
+
+1. **Local JVM is Temurin JDK 25.** JDK 25 removed the internal
+   `TypeTag.UNKNOWN` javac API, which breaks Lombok 1.18.36 (the
+   version Spring Boot 3.4.3 manages). JaCoCo 0.8.8 (ASM 9.5) also
+   fails to instrument JDK 25 class files (major version 69).
+2. **Local OS timezone is `America/Buenos_Aires`.** The PostgreSQL JDBC
+   driver sends the JVM's default timezone to the server during the
+   connection handshake. The `postgres:15` image used by Testcontainers
+   does not ship the full `tzdata` package and rejects the connection
+   with `FATAL: invalid value for parameter "TimeZone"`, aborting the
+   init-script phase.
+
+Both problems are environmental (Damian's laptop), not problems with
+the production container — which runs JDK 17 inside
+`eclipse-temurin:17-jre-jammy` with UTC by default.
+
+### Decision
+
+**Production runtime:**
+
+- The runtime container explicitly sets `ENV TZ=UTC` and
+  `ENV JAVA_TOOL_OPTIONS=-Duser.timezone=UTC` in `Dockerfile`. The
+  service is timezone-agnostic and always operates in UTC regardless
+  of host.
+- Hibernate is configured with
+  `spring.jpa.properties.hibernate.jdbc.time_zone=UTC` so that all
+  JDBC time operations normalize to UTC.
+
+**Local dev environment:**
+
+- `lombok.version` overridden to `1.18.38` in `pom.xml` to support
+  JDK 24+ (closest available to JDK 25). Kept as a safety net for
+  compiling in IDEs that default to JDK 25.
+- `jacoco-maven-plugin` upgraded to `0.8.12` with
+  `<includes>com.clara.*</includes>` so the agent only instruments our
+  code and does not crash on JDK 25 internal classes. Also kept for
+  IDE compatibility.
+- A local `.claude/test.cmd` script forces `JAVA_HOME` to a JDK 17
+  installation before invoking `./mvnw.cmd`, so Maven and Testcontainers
+  run under a supported JVM. This script lives in `.claude/` which is
+  gitignored as personal tooling and is not part of the deliverable.
+- **Testcontainers timezone fix (root cause):** The init-script JDBC
+  connection that Testcontainers opens ignores the datasource URL
+  `TimeZone=UTC` parameter — it fires before the application's datasource
+  configuration is consulted. The fix is `-Duser.timezone=UTC` in the
+  surefire `<argLine>` (via `@{argLine} -Duser.timezone=UTC`), which
+  forces UTC at the test JVM level and covers the init-script connection.
+
+### Rationale
+
+The production side of the decision is straightforward: a server
+should never depend on the host's timezone. Forcing UTC both at the
+OS (`TZ`) and JVM (`-Duser.timezone=UTC`) layers, and telling
+Hibernate to normalize JDBC timestamps to UTC, makes the service
+portable and predictable.
+
+The local dev environment uses JDK 17 via `.claude/test.cmd` to
+side-step the JDK 25 incompatibilities with Lombok and JaCoCo. The
+Lombok and JaCoCo version overrides in `pom.xml` are kept as a safety
+net for IDE compilation under JDK 25 — they are harmless on JDK 17.
+
+### Consequences
+
+- **Production:** fully deterministic timezone behaviour, no reliance
+  on host configuration.
+- **Local dev:** test runner works reliably under JDK 17. The Lombok
+  and JaCoCo overrides are harmless on JDK 17 and prevent breakage
+  when compiling under JDK 25 from an IDE.
+
+---
+
 ## Open questions
 
 ### [OPEN QUESTION #1] — Upload endpoint contract
@@ -446,7 +527,7 @@ honored by the heap constraint, not by the container limit.
 
 Confirmation to request from the evaluator:
 - Does this interpretation match the challenge's intent, or did they
-  expect GraalVM Native Image (which would fit the literal 50MB container)?
+expect GraalVM Native Image (which would fit the literal 50MB container)?
 - If neither, what was the expected runtime shape?
 
 Implementation proceeds on the ADR-006 interpretation. If the evaluator
