@@ -11,31 +11,37 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
 @ActiveProfiles("test")
 public abstract class AbstractIntegrationTest {
 
-  static final String BUCKET = "document-bucket";
+  protected static final String BUCKET = "document-bucket";
 
-  @Container
+  // Singleton pattern: containers start once per JVM and are shared across all subclasses.
+  // @Container/@Testcontainers lifecycle management stops containers after each test class,
+  // which breaks the second class when they share static fields via inheritance.
+  // Ryuk handles cleanup on JVM exit.
   static final PostgreSQLContainer<?> POSTGRES =
-      new PostgreSQLContainer<>("postgres:15").withInitScript("test-schema-init.sql");
+      new PostgreSQLContainer<>("postgres:15")
+          .withEnv("TZ", "UTC")
+          .withInitScript("test-schema-init.sql");
 
-  @Container
   static final MinIOContainer MINIO = new MinIOContainer("minio/minio:latest");
 
-  @LocalServerPort
-  protected int port;
+  static {
+    POSTGRES.start();
+    MINIO.start();
+  }
+
+  @LocalServerPort protected int port;
 
   @DynamicPropertySource
   static void configureProperties(DynamicPropertyRegistry registry) {
+    // TimeZone=UTC is NOT added here — the init-script JDBC connection that Testcontainers opens
+    // ignores datasource URL params. The actual fix is -Duser.timezone=UTC in surefire argLine.
     registry.add(
-        "spring.datasource.url",
-        () -> POSTGRES.getJdbcUrl() + "?currentSchema=document_schema");
+        "spring.datasource.url", () -> POSTGRES.getJdbcUrl() + "?currentSchema=document_schema");
     registry.add("spring.datasource.username", POSTGRES::getUsername);
     registry.add("spring.datasource.password", POSTGRES::getPassword);
     registry.add("minio.endpoint", MINIO::getS3URL);

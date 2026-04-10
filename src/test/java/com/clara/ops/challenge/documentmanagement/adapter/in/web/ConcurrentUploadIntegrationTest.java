@@ -46,7 +46,11 @@ class ConcurrentUploadIntegrationTest extends AbstractIntegrationTest {
     int objectCount = 0;
     for (Result<Item> result :
         minioClient.listObjects(
-            ListObjectsArgs.builder().bucket(BUCKET).prefix("concurrent-user-").recursive(true).build())) {
+            ListObjectsArgs.builder()
+                .bucket(BUCKET)
+                .prefix("concurrent-user-")
+                .recursive(true)
+                .build())) {
       result.get(); // throws if any object is corrupted
       objectCount++;
     }

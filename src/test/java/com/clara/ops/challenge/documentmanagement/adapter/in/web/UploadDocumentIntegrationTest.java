@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.clara.ops.challenge.documentmanagement.AbstractIntegrationTest;
 import com.clara.ops.challenge.documentmanagement.adapter.in.web.dto.ErrorResponse;
-import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.StatObjectArgs;
 import java.util.List;
