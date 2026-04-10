@@ -13,12 +13,17 @@ import com.clara.ops.challenge.documentmanagement.application.port.in.UploadDocu
 import com.clara.ops.challenge.documentmanagement.application.port.in.UploadDocumentService;
 import com.clara.ops.challenge.documentmanagement.domain.Document;
 import com.clara.ops.challenge.documentmanagement.domain.exception.InvalidDocumentException;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Encoding;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -37,6 +42,14 @@ public class DocumentController {
   private final SearchDocumentService searchDocumentService;
   private final DownloadDocumentService downloadDocumentService;
 
+  @Operation(summary = "Upload a PDF document (multipart/form-data)")
+  @io.swagger.v3.oas.annotations.parameters.RequestBody(
+      content =
+          @Content(
+              mediaType = MediaType.MULTIPART_FORM_DATA_VALUE,
+              schema = @Schema(implementation = UploadForm.class),
+              encoding =
+                  @Encoding(name = "metadata", contentType = MediaType.APPLICATION_JSON_VALUE)))
   @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ResponseEntity<Void> upload(
       @RequestPart("metadata") @Valid UploadMetadataRequest metadata,
@@ -63,7 +76,8 @@ public class DocumentController {
   @PostMapping(value = "/search", consumes = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<PaginatedDocumentSearchResponse> search(
       @RequestBody DocumentSearchFiltersRequest filters,
-      @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC)
+      @ParameterObject
+          @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC)
           Pageable pageable) {
     SearchDocumentQuery query =
         new SearchDocumentQuery(filters.user(), filters.name(), filters.tags());
@@ -87,6 +101,19 @@ public class DocumentController {
   public ResponseEntity<DocumentDownloadUrlResponse> download(@PathVariable Long documentId) {
     String url = downloadDocumentService.getDownloadUrl(documentId);
     return ResponseEntity.ok(new DocumentDownloadUrlResponse(url));
+  }
+
+  // Swagger UI schema for the multipart upload request. Not used at runtime —
+  // Spring reads the actual @RequestPart parameters. The @RequestBody annotation
+  // above references this class to generate the correct OpenAPI multipart schema,
+  // with the metadata part explicitly encoded as application/json.
+  @SuppressWarnings("unused")
+  private static final class UploadForm {
+    @Schema(description = "Document metadata", required = true)
+    public UploadMetadataRequest metadata;
+
+    @Schema(type = "string", format = "binary", description = "PDF file (max 500 MB)")
+    public MultipartFile file;
   }
 
   private static DocumentResponse toResponse(Document doc) {

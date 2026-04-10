@@ -5,10 +5,10 @@ services:
     ports:
       - "5432:5432"
     networks:
-      - batch_network
+      - document_management_network
     volumes:
       - challenge_postgresql_data:/var/lib/postgresql/data
-      - ./init-scripts:/docker-entrypoint-initdb.d
+      - ./docker/init-scripts:/docker-entrypoint-initdb.d
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -21,14 +21,14 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-04-03T14-56-28Z
     container_name: minio
     restart: always
     ports:
       - "9000:9000"  # API S3
       - "9001:9001"  # MinIO Web Console
     networks:
-      - batch_network
+      - document_management_network
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -45,7 +45,7 @@ services:
   # MinIO bootstrap — one-shot init container.
   # Follows docs/minio-local-setup.md: creates the bucket and provisions a
   # dedicated service account so the application never uses root credentials
-  # at runtime. Runs once per `docker-compose up`, idempotent.
+  # at runtime. Runs once per `docker compose up`, idempotent.
   # -----------------------------------------------------------------------------
   minio-bootstrap:
     image: minio/mc:latest
@@ -54,7 +54,7 @@ services:
       minio:
         condition: service_healthy
     networks:
-      - batch_network
+      - document_management_network
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -80,12 +80,12 @@ services:
   document-management-service:
     container_name: document-management-service
     build:
-      context: ..
+      context: .
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
     networks:
-      - batch_network
+      - document_management_network
     depends_on:
       postgresql:
         condition: service_healthy
@@ -100,10 +100,12 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD}
       # MinIO — application service account (NOT root); provisioned by minio-bootstrap.
       MINIO_ENDPOINT: http://minio:9000
+      # Pre-signed URLs must use localhost so clients outside Docker can fetch them.
+      MINIO_PUBLIC_ENDPOINT: http://localhost:9000
       MINIO_ACCESS_KEY: ${MINIO_APP_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_APP_SECRET_KEY}
       MINIO_BUCKET: document-bucket
-      MINIO_REGION: ${MINIO_REGION:us-east-1}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
       # Server
       SERVER_PORT: 8080
     deploy:
@@ -123,5 +125,5 @@ volumes:
     driver: local
 
 networks:
-  batch_network:
+  document_management_network:
     driver: bridge

@@ -8,12 +8,14 @@ import com.clara.ops.challenge.documentmanagement.domain.exception.StorageExcept
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 @Slf4j
@@ -71,6 +73,18 @@ public class GlobalExceptionHandler {
   public ErrorResponse handleStorage(StorageException ex) {
     log.error("storage error", ex);
     return new ErrorResponse("STORAGE_ERROR", "storage operation failed");
+  }
+
+  @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+  @ResponseStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+  public ErrorResponse handleUnsupportedMediaType(HttpMediaTypeNotSupportedException ex) {
+    return new ErrorResponse("UNSUPPORTED_MEDIA_TYPE", ex.getMessage());
+  }
+
+  @ExceptionHandler(NoResourceFoundException.class)
+  @ResponseStatus(HttpStatus.NOT_FOUND)
+  public ErrorResponse handleNoResource(NoResourceFoundException ex) {
+    return new ErrorResponse("NOT_FOUND", ex.getMessage());
   }
 
   @ExceptionHandler(Exception.class)

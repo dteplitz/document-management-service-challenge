@@ -153,6 +153,49 @@ class SearchDocumentIntegrationTest extends AbstractIntegrationTest {
     assertThat(response.getBody().metadata().currentItems()).isEqualTo(1);
   }
 
+  @Test
+  void search_allThreeFilters_returnsOnlyExactMatch() {
+    upload("srch-combined", "exact.pdf", List.of("hr", "2026"));
+    upload("srch-combined", "wrong-name.pdf", List.of("hr", "2026"));
+    upload("srch-combined", "wrong-tags.pdf", List.of("hr"));
+
+    ResponseEntity<PaginatedDocumentSearchResponse> response =
+        search(
+            Map.of("user", "srch-combined", "name", "exact.pdf", "tags", List.of("hr", "2026")),
+            "");
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(response.getBody()).isNotNull();
+    assertThat(response.getBody().documents()).hasSize(1);
+    assertThat(response.getBody().documents().get(0).name()).isEqualTo("exact.pdf");
+    assertThat(response.getBody().metadata().totalItems()).isEqualTo(1);
+  }
+
+  @Test
+  void search_noMatchingDocuments_returns200WithEmptyList() {
+    ResponseEntity<PaginatedDocumentSearchResponse> response =
+        search(Map.of("user", "user-that-does-not-exist-xyz"), "");
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(response.getBody()).isNotNull();
+    assertThat(response.getBody().documents()).isEmpty();
+    assertThat(response.getBody().metadata().totalItems()).isEqualTo(0);
+    assertThat(response.getBody().metadata().totalPages()).isEqualTo(0);
+  }
+
+  @Test
+  void search_pageOutOfRange_returns200WithEmptyListAndCorrectTotal() {
+    upload("srch-oob", "only.pdf", List.of());
+
+    ResponseEntity<PaginatedDocumentSearchResponse> response =
+        search(Map.of("user", "srch-oob"), "?page=999&size=10");
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(response.getBody()).isNotNull();
+    assertThat(response.getBody().documents()).isEmpty();
+    assertThat(response.getBody().metadata().totalItems()).isEqualTo(1);
+  }
+
   // --- ordering test ---
 
   @Test

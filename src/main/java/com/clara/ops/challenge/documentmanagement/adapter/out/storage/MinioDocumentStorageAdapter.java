@@ -10,13 +10,12 @@ import io.minio.RemoveObjectArgs;
 import io.minio.http.Method;
 import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 @Component
 @Slf4j
-@RequiredArgsConstructor
 public class MinioDocumentStorageAdapter implements DocumentStorage {
 
   // S3 multipart minimum — determines per-upload heap footprint.
@@ -25,7 +24,17 @@ public class MinioDocumentStorageAdapter implements DocumentStorage {
   private static final long PART_SIZE = 5 * 1024 * 1024L;
 
   private final MinioClient minioClient;
+  private final MinioClient presignedMinioClient;
   private final MinioProperties props;
+
+  public MinioDocumentStorageAdapter(
+      MinioClient minioClient,
+      @Qualifier("presignedMinioClient") MinioClient presignedMinioClient,
+      MinioProperties props) {
+    this.minioClient = minioClient;
+    this.presignedMinioClient = presignedMinioClient;
+    this.props = props;
+  }
 
   @Override
   public void store(
@@ -45,7 +54,9 @@ public class MinioDocumentStorageAdapter implements DocumentStorage {
   @Override
   public String generatePresignedUrl(String storagePath) {
     try {
-      return minioClient.getPresignedObjectUrl(
+      // Uses the presigned client (configured with the public endpoint) so the
+      // Host header in the AWS Signature V4 matches what external callers resolve.
+      return presignedMinioClient.getPresignedObjectUrl(
           GetPresignedObjectUrlArgs.builder()
               .method(Method.GET)
               .bucket(props.bucket())

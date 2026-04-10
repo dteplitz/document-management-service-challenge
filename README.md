@@ -67,7 +67,7 @@ See `.env.example` for an annotated template with default values.
 ### Run the full stack
 
 ```bash
-docker compose -f docker/docker-compose.yml --env-file .env up --build
+docker compose up --build
 ```
 
 This starts PostgreSQL, MinIO, and the Document Management Service. The service
@@ -78,7 +78,7 @@ is available at `http://localhost:8080`.
 Start only the infrastructure:
 
 ```bash
-docker compose -f docker/docker-compose.yml --env-file .env up postgresql minio minio-bootstrap
+docker compose up postgresql minio minio-bootstrap
 ```
 
 Then run the app with the `local` Spring profile, which reads `src/main/resources/application-local.yml`:
@@ -102,6 +102,11 @@ in the run configuration to:
 ```bash
 curl http://localhost:8080/actuator/health
 ```
+
+### Swagger UI
+
+Available at `http://localhost:8080/swagger-ui/index.html` once the stack is running.
+OpenAPI spec (JSON) at `http://localhost:8080/v3/api-docs`.
 
 ### MinIO Web Console
 
