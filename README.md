@@ -137,6 +137,88 @@ Requires Docker to be running.
 ./mvnw spotless:apply
 ```
 
+## API usage examples
+
+### Upload a document
+
+```bash
+curl -X POST http://localhost:8080/document-management/upload \
+  -F 'metadata={"user":"alice","name":"contract.pdf","tags":["finance","2026"]};type=application/json' \
+  -F 'file=@/path/to/contract.pdf;type=application/pdf'
+```
+
+**Success:** `201 Created` with a `Location: /document-management/download/{id}` header.
+
+**Duplicate:** `409 Conflict`
+
+```json
+{"code":"DUPLICATE_DOCUMENT","message":"document 'contract.pdf' already exists for user 'alice'"}
+```
+
+### Search documents
+
+All filters are optional. Results are paginated and sorted by `createdAt` descending by default.
+
+```bash
+# No filters — returns all documents
+curl -X POST http://localhost:8080/document-management/search \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+
+# Filter by user and tags (all specified tags must be present)
+curl -X POST http://localhost:8080/document-management/search \
+  -H 'Content-Type: application/json' \
+  -d '{"user":"alice","tags":["finance","2026"]}'
+
+# With pagination (page 0, 10 results per page)
+curl -X POST 'http://localhost:8080/document-management/search?page=0&size=10' \
+  -H 'Content-Type: application/json' \
+  -d '{"user":"alice"}'
+```
+
+**Success:** `200 OK`
+
+```json
+{
+  "pagination": {"page":0,"size":20,"count":1,"totalPages":1,"totalCount":1},
+  "documents": [
+    {
+      "id": "1",
+      "user": "alice",
+      "name": "contract.pdf",
+      "tags": ["finance","2026"],
+      "fileSize": 1048576,
+      "fileType": "application/pdf",
+      "createdAt": "2026-04-10T12:00:00Z"
+    }
+  ]
+}
+```
+
+### Get a download URL
+
+```bash
+curl http://localhost:8080/document-management/download/1
+```
+
+**Success:** `200 OK`
+
+```json
+{"url":"http://localhost:9000/document-bucket/alice/contract.pdf?X-Amz-Algorithm=..."}
+```
+
+The URL is a pre-signed MinIO URL valid for 15 minutes (configurable via
+`MINIO_PRESIGNED_URL_EXPIRY_SECONDS`). Fetch the file directly from that URL —
+the bytes never pass through this service.
+
+**Not found:** `404 Not Found`
+
+```json
+{"code":"DOCUMENT_NOT_FOUND","message":"document with id 99 not found"}
+```
+
+---
+
 ## Further documentation
 
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) — architecture decision records

@@ -274,7 +274,12 @@ and the README walks the reviewer through everything they need to know.
 
 **Dependencies:** Slices 1, 2, 3 must be closed.
 
-**Retrospective:** _filled after slice closes._
+**Retrospective:** Closed 2026-04-10. All deliverables shipped: ARCHITECTURE.md filled (8 sections,
+including the critical "How memory is kept under 50MB" with byte-level pipeline, concurrency math,
+and JVM flags); README extended with real curl examples for all three endpoints; multipart temp
+location fixed to `${java.io.tmpdir}/multipart`; JaCoCo report reviewed (88% instruction / 78%
+branch coverage — all critical paths covered, gaps limited to infrastructure error paths and the
+Spring Boot main class). Spotless applied by Damian. Heavy load test re-run green before close.
 
 ---
 
