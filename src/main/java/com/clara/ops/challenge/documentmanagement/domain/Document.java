@@ -3,7 +3,6 @@ package com.clara.ops.challenge.documentmanagement.domain;
 import com.clara.ops.challenge.documentmanagement.domain.exception.InvalidDocumentException;
 import java.time.Instant;
 import java.util.List;
-import java.util.Locale;
 
 public record Document(
     Long id,
@@ -38,9 +37,6 @@ public record Document(
     }
     if (name.contains("/") || name.contains("\\") || name.contains("\0")) {
       throw new InvalidDocumentException("name must not contain path separators or null bytes");
-    }
-    if (!name.toLowerCase(Locale.ROOT).endsWith(".pdf")) {
-      throw new InvalidDocumentException("name must end with .pdf");
     }
     if (tags == null) {
       throw new InvalidDocumentException("tags must not be null");

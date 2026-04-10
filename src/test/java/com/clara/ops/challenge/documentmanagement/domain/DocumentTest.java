@@ -50,11 +50,10 @@ class DocumentTest {
   }
 
   @Test
-  void newUpload_nameWithoutPdfExtension_throwsInvalidDocumentException() {
-    assertThatThrownBy(
-            () -> Document.newUpload("alice", "report", List.of(), 1024L, "application/pdf"))
-        .isInstanceOf(InvalidDocumentException.class)
-        .hasMessageContaining("name must end with .pdf");
+  void newUpload_nameWithoutPdfExtension_isAccepted() {
+    Document doc = Document.newUpload("alice", "report", List.of(), 1024L, "application/pdf");
+    assertThat(doc.name()).isEqualTo("report");
+    assertThat(doc.storagePath()).isEqualTo("alice/report");
   }
 
   @Test

@@ -57,13 +57,10 @@ class UploadDocumentIntegrationTest extends AbstractIntegrationTest {
   }
 
   @Test
-  void upload_nameWithoutPdfExtension_returns400() {
-    ResponseEntity<ErrorResponse> response =
-        uploadForError("carol", "nodotpdf", List.of(), syntheticPdf(), ErrorResponse.class);
+  void upload_nameWithoutPdfExtension_returns201() {
+    ResponseEntity<Void> response = upload("carol", "nodotpdf", List.of(), syntheticPdf());
 
-    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-    assertThat(response.getBody()).isNotNull();
-    assertThat(response.getBody().code()).isEqualTo("INVALID_DOCUMENT");
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
   }
 
   // --- helpers ---
