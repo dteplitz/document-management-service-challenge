@@ -37,7 +37,7 @@ spring:
       # threshold 0 = every uploaded part is written to disk immediately,
       # never buffered in JVM heap. Foundation of the streaming pipeline.
       file-size-threshold: 0
-      location: /tmp/multipart
+      location: ${java.io.tmpdir}/multipart
       max-file-size: 500MB
       max-request-size: 505MB
 
