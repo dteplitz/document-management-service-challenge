@@ -38,6 +38,7 @@ CLAUDE.md
 
 ### Secrets & local runtime ###
 .env
+application-local.yml
 *.pem
 *.key
 logs/
