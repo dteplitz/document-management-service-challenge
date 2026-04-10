@@ -41,7 +41,7 @@ HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=45s \
 ENTRYPOINT ["java", \
     "-Xmx50m", \
     "-Xms50m", \
-    "-XX:MaxMetaspaceSize=64m", \
+    "-XX:MaxMetaspaceSize=96m", \
     "-Xss256k", \
     "-XX:+ExitOnOutOfMemoryError", \
     "-jar", \
