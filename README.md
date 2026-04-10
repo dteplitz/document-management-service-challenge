@@ -67,11 +67,35 @@ See `.env.example` for an annotated template with default values.
 ### Run the full stack
 
 ```bash
-docker-compose -f docker/docker-compose.yml up --build
+docker compose -f docker/docker-compose.yml --env-file .env up --build
 ```
 
 This starts PostgreSQL, MinIO, and the Document Management Service. The service
 is available at `http://localhost:8080`.
+
+### Run locally (infra in Docker, app in IDE)
+
+Start only the infrastructure:
+
+```bash
+docker compose -f docker/docker-compose.yml --env-file .env up postgresql minio minio-bootstrap
+```
+
+Then run the app with the `local` Spring profile, which reads `src/main/resources/application-local.yml`:
+
+```bash
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local -Duser.timezone=UTC
+```
+
+**IntelliJ:** open the `document-management-service-challenge/` folder directly, then set VM options
+in the run configuration to:
+
+```
+-Dspring.profiles.active=local -Duser.timezone=UTC
+```
+
+> `-Duser.timezone=UTC` is required on machines whose OS timezone is not UTC (e.g. `America/Buenos_Aires`).
+> The `postgres:15` image rejects the connection otherwise.
 
 ### Verify it's up
 
