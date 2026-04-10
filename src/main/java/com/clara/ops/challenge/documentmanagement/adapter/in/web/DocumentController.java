@@ -1,6 +1,12 @@
 package com.clara.ops.challenge.documentmanagement.adapter.in.web;
 
+import com.clara.ops.challenge.documentmanagement.adapter.in.web.dto.DocumentResponse;
+import com.clara.ops.challenge.documentmanagement.adapter.in.web.dto.DocumentSearchFiltersRequest;
+import com.clara.ops.challenge.documentmanagement.adapter.in.web.dto.PaginatedDocumentSearchResponse;
+import com.clara.ops.challenge.documentmanagement.adapter.in.web.dto.PaginationMetadata;
 import com.clara.ops.challenge.documentmanagement.adapter.in.web.dto.UploadMetadataRequest;
+import com.clara.ops.challenge.documentmanagement.application.port.in.SearchDocumentQuery;
+import com.clara.ops.challenge.documentmanagement.application.port.in.SearchDocumentService;
 import com.clara.ops.challenge.documentmanagement.application.port.in.UploadDocumentCommand;
 import com.clara.ops.challenge.documentmanagement.application.port.in.UploadDocumentService;
 import com.clara.ops.challenge.documentmanagement.domain.Document;
@@ -9,7 +15,12 @@ import jakarta.validation.Valid;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +32,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class DocumentController {
 
   private final UploadDocumentService uploadDocumentService;
+  private final SearchDocumentService searchDocumentService;
 
   @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ResponseEntity<Void> upload(
@@ -43,5 +55,39 @@ public class DocumentController {
       URI location = URI.create("/document-management/download/" + created.id());
       return ResponseEntity.created(location).build();
     }
+  }
+
+  @PostMapping(value = "/search", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<PaginatedDocumentSearchResponse> search(
+      @RequestBody DocumentSearchFiltersRequest filters,
+      @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC)
+          Pageable pageable) {
+    SearchDocumentQuery query =
+        new SearchDocumentQuery(filters.user(), filters.name(), filters.tags());
+    Page<Document> result = searchDocumentService.search(query, pageable);
+
+    PaginationMetadata metadata =
+        new PaginationMetadata(
+            result.getNumber(),
+            result.getSize(),
+            result.getNumberOfElements(),
+            result.getTotalPages(),
+            (int) result.getTotalElements());
+
+    List<DocumentResponse> documents =
+        result.getContent().stream().map(DocumentController::toResponse).toList();
+
+    return ResponseEntity.ok(new PaginatedDocumentSearchResponse(metadata, documents));
+  }
+
+  private static DocumentResponse toResponse(Document doc) {
+    return new DocumentResponse(
+        String.valueOf(doc.id()),
+        doc.user(),
+        doc.name(),
+        doc.tags(),
+        (int) doc.fileSize(),
+        doc.fileType(),
+        doc.createdAt() != null ? doc.createdAt().toString() : null);
   }
 }

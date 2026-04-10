@@ -65,8 +65,7 @@ public class UploadDocumentServiceImpl implements UploadDocumentService {
     try {
       documentStorage.delete(storagePath);
     } catch (Exception e) {
-      log.error(
-          "failed to delete orphan MinIO object at '{}' during compensation", storagePath, e);
+      log.error("failed to delete orphan MinIO object at '{}' during compensation", storagePath, e);
     }
   }
 }
