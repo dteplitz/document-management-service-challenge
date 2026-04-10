@@ -235,13 +235,7 @@ through the service.
 
 **Dependencies:** Slice 1 must be closed.
 
-**Retrospective:** Closed 2026-04-10. All tests green (2 unit + 4 integration). Two issues surfaced:
-(1) MinIO pre-signed URL generation requires `region` set explicitly on `GetPresignedObjectUrlArgs`
-— the `MinioClient` builder's `.region()` is insufficient due to the SDK's internal propagation.
-Added `minio.region` property (default `us-east-1`). (2) Fetching a pre-signed URL via
-`RestTemplate.getForEntity(String)` double-encodes `%2F` in `X-Amz-Credential`; fixed by passing
-a `URI` object instead. Production behavior is unaffected — external clients (browser, curl) handle
-the URL correctly.
+**Retrospective:** Closed 2026-04-10. All tests green (2 unit + 4 integration).
 
 ---
 
