@@ -162,7 +162,11 @@ Duplicates are rejected with HTTP 409.
 - Disk-based multipart implies ~5GB worst-case temp footprint under full
   concurrency; container ephemeral storage must be sufficient.
 
-**Retrospective:** _filled after slice closes._
+**Retrospective:** Closed 2026-04-09. All 28 tests green (27 normal + 1 heavy 500MB
+load test). Code review session applied: path traversal security fix, symmetric MinIO
+compensation on DB failure, Location header on 201, pom.xml metadata/argLine cleanup,
+ADR-008 finalized, README and ARCHITECTURE synced. No architectural surprises; JVM
+tuning and streaming pipeline held within the 50MB constraint as designed.
 
 ---
 
@@ -277,3 +281,4 @@ Things explicitly not part of this implementation, with reasoning:
 - **Multi-region MinIO replication** — out of scope.
 - **OpenAPI / Swagger UI auto-generation** — listed as optional in the
   challenge. May be added in Slice 4 if time permits.
+
