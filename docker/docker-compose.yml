@@ -103,6 +103,7 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_APP_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_APP_SECRET_KEY}
       MINIO_BUCKET: document-bucket
+      MINIO_REGION: ${MINIO_REGION:us-east-1}
       # Server
       SERVER_PORT: 8080
     deploy:
