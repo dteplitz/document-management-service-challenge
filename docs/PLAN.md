@@ -247,6 +247,9 @@ and the README walks the reviewer through everything they need to know.
 
 **Deliverables:**
 
+- Fix `spring.servlet.multipart.location` from `/tmp/multipart` to
+  `${java.io.tmpdir}/multipart` in `application.yml` (eliminates Tomcat
+  "Failed to create upload location" warning on Windows test runs)
 - `docs/ARCHITECTURE.md` filled out, especially the **"How memory is kept
   under 50MB"** section
 - `README.md` finalized: real curl examples, accurate project structure,
