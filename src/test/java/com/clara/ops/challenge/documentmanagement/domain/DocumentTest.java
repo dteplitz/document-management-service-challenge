@@ -90,6 +90,33 @@ class DocumentTest {
   }
 
   @Test
+  void newUpload_nameWithSlash_throwsInvalidDocumentException() {
+    assertThatThrownBy(
+            () ->
+                Document.newUpload(
+                    "alice", "../other-user/evil.pdf", List.of(), 1024L, "application/pdf"))
+        .isInstanceOf(InvalidDocumentException.class)
+        .hasMessageContaining("path separators");
+  }
+
+  @Test
+  void newUpload_nameWithBackslash_throwsInvalidDocumentException() {
+    assertThatThrownBy(
+            () -> Document.newUpload("alice", "sub\\evil.pdf", List.of(), 1024L, "application/pdf"))
+        .isInstanceOf(InvalidDocumentException.class)
+        .hasMessageContaining("path separators");
+  }
+
+  @Test
+  void newUpload_userWithSlash_throwsInvalidDocumentException() {
+    assertThatThrownBy(
+            () ->
+                Document.newUpload("alice/bob", "report.pdf", List.of(), 1024L, "application/pdf"))
+        .isInstanceOf(InvalidDocumentException.class)
+        .hasMessageContaining("path separators");
+  }
+
+  @Test
   void newUpload_wrongContentType_throwsInvalidDocumentException() {
     assertThatThrownBy(
             () -> Document.newUpload("alice", "report.pdf", List.of(), 1024L, "text/plain"))
@@ -99,8 +126,7 @@ class DocumentTest {
 
   @Test
   void newUpload_contentTypeCaseInsensitive_isAccepted() {
-    Document doc =
-        Document.newUpload("alice", "report.pdf", List.of(), 1024L, "Application/PDF");
+    Document doc = Document.newUpload("alice", "report.pdf", List.of(), 1024L, "Application/PDF");
     assertThat(doc.fileType()).isEqualTo("Application/PDF");
   }
 }

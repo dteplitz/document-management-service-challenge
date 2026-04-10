@@ -30,8 +30,14 @@ public record Document(
     if (user == null || user.isBlank()) {
       throw new InvalidDocumentException("user is required");
     }
+    if (user.contains("/") || user.contains("\\") || user.contains("\0")) {
+      throw new InvalidDocumentException("user must not contain path separators or null bytes");
+    }
     if (name == null || name.isBlank()) {
       throw new InvalidDocumentException("name is required");
+    }
+    if (name.contains("/") || name.contains("\\") || name.contains("\0")) {
+      throw new InvalidDocumentException("name must not contain path separators or null bytes");
     }
     if (!name.toLowerCase(Locale.ROOT).endsWith(".pdf")) {
       throw new InvalidDocumentException("name must end with .pdf");
