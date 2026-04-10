@@ -14,6 +14,9 @@ RUN ./mvnw clean package -DskipTests -B
 # Stage 2: Runtime
 FROM eclipse-temurin:17-jre-jammy
 
+ENV TZ=UTC
+ENV JAVA_TOOL_OPTIONS="-Duser.timezone=UTC"
+
 WORKDIR /app
 
 # curl is needed for the HEALTHCHECK
