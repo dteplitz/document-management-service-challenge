@@ -2,6 +2,7 @@ package com.clara.ops.challenge.documentmanagement.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
@@ -21,6 +22,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
  *
  * <p>Uses the Singleton Pattern — one container per JVM, no per-class lifecycle.
  */
+@Tag("integration")
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = Replace.NONE)

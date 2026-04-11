@@ -6,6 +6,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.PostgreSQLContainer;
 
@@ -18,6 +19,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * <p>If this test fails, the problem is below the application layer (Docker, image, init script,
  * timezone). Fix here before moving to Layer 2.
  */
+@Tag("integration")
 class DatabaseContainerSmokeTest {
 
   // Singleton pattern: one start per JVM, no @Testcontainers/@Container lifecycle management.
