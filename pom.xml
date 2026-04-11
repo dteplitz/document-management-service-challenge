@@ -92,20 +92,36 @@
 	</dependencies>
 
 	<profiles>
+		<!--
+		  Test execution profiles:
+		    ./mvnw test                        – unit only (default, no Docker needed)
+		    ./mvnw test -Pintegration-tests    – integration only (requires Docker)
+		    ./mvnw test -Pall-tests            – all tests (requires Docker)
+		-->
 		<profile>
-			<id>heavy</id>
+			<id>integration-tests</id>
 			<build>
 				<plugins>
 					<plugin>
 						<groupId>org.apache.maven.plugins</groupId>
 						<artifactId>maven-surefire-plugin</artifactId>
-						<!-- combine.self=override replaces the base surefire config entirely
-						     instead of merging. Without it, Maven inherits excludedGroups=heavy
-						     from the base config, which cancels groups=heavy → 0 tests. -->
 						<configuration combine.self="override">
-							<groups>heavy</groups>
-							<!-- @{argLine} preserves the JaCoCo agent injected by prepare-agent. -->
-							<argLine>@{argLine} -Duser.timezone=UTC -Xmx768m</argLine>
+							<groups>integration</groups>
+							<argLine>@{argLine} -Duser.timezone=UTC</argLine>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+		<profile>
+			<id>all-tests</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-surefire-plugin</artifactId>
+						<configuration combine.self="override">
+							<argLine>@{argLine} -Duser.timezone=UTC</argLine>
 						</configuration>
 					</plugin>
 				</plugins>
@@ -118,9 +134,30 @@
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-enforcer-plugin</artifactId>
+				<version>3.5.0</version>
+				<executions>
+					<execution>
+						<id>enforce-java-17</id>
+						<goals>
+							<goal>enforce</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<requireJavaVersion>
+									<version>[17,18)</version>
+									<message>This project requires JDK 17. Detected: ${java.version}. Set JAVA_HOME to a JDK 17 installation.</message>
+								</requireJavaVersion>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
 				<configuration>
-					<excludedGroups>heavy</excludedGroups>
+					<excludedGroups>integration</excludedGroups>
 					<!-- Force UTC for the test JVM. Testcontainers' withInitScript opens
 					     a JDBC connection that ignores datasource URL params, so the driver
 					     sends the JVM's default TZ to Postgres. Legacy names like
