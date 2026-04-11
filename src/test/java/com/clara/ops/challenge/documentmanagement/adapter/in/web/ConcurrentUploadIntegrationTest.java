@@ -3,6 +3,7 @@ package com.clara.ops.challenge.documentmanagement.adapter.in.web;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.clara.ops.challenge.documentmanagement.AbstractIntegrationTest;
+import com.clara.ops.challenge.documentmanagement.adapter.in.web.dto.PaginatedDocumentSearchResponse;
 import io.minio.ListObjectsArgs;
 import io.minio.MinioClient;
 import io.minio.Result;
@@ -55,6 +56,55 @@ class ConcurrentUploadIntegrationTest extends AbstractIntegrationTest {
       objectCount++;
     }
     assertThat(objectCount).isEqualTo(threads);
+  }
+
+  /**
+   * Verifies that two simultaneous uploads of the same (user, name) leave exactly one DB row and
+   * exactly one MinIO object. Before ADR-009, the loser's compensation would delete the winner's
+   * object (same storagePath). With UUID-keyed paths each request owns a distinct MinIO key, so
+   * compensation only ever removes its own object.
+   */
+  @Test
+  void concurrentDuplicateUpload_exactlyOneSucceeds_noOrphanInMinIO() throws Exception {
+    String user = "race-user";
+    String name = "race-doc.pdf";
+
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    Future<HttpStatusCode> f1 = executor.submit(() -> upload(user, name));
+    Future<HttpStatusCode> f2 = executor.submit(() -> upload(user, name));
+    executor.shutdown();
+    assertThat(executor.awaitTermination(2, TimeUnit.MINUTES)).isTrue();
+
+    List<HttpStatusCode> statuses = List.of(f1.get(), f2.get());
+    assertThat(statuses)
+        .as("exactly one upload must succeed and one must be rejected as duplicate")
+        .containsExactlyInAnyOrder(HttpStatus.CREATED, HttpStatus.CONFLICT);
+
+    // Exactly one DB row — verified via search API
+    HttpHeaders searchHeaders = new HttpHeaders();
+    searchHeaders.setContentType(MediaType.APPLICATION_JSON);
+    ResponseEntity<PaginatedDocumentSearchResponse> searchResponse =
+        restTemplate.exchange(
+            "http://localhost:" + port + "/document-management/search",
+            HttpMethod.POST,
+            new HttpEntity<>(
+                String.format("{\"user\":\"%s\",\"name\":\"%s\"}", user, name), searchHeaders),
+            PaginatedDocumentSearchResponse.class);
+    assertThat(searchResponse.getBody().metadata().totalItems())
+        .as("exactly one document row must exist in DB")
+        .isEqualTo(1);
+
+    // Exactly one object in MinIO — verifies the loser's compensation did not delete the winner's
+    int objectCount = 0;
+    for (Result<Item> result :
+        minioClient.listObjects(
+            ListObjectsArgs.builder().bucket(BUCKET).prefix(user + "/").recursive(true).build())) {
+      result.get();
+      objectCount++;
+    }
+    assertThat(objectCount)
+        .as("exactly one MinIO object must survive after duplicate race")
+        .isEqualTo(1);
   }
 
   private HttpStatusCode upload(String user, String name) {

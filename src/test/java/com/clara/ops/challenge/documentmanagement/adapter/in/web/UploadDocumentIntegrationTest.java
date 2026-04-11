@@ -4,8 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.clara.ops.challenge.documentmanagement.AbstractIntegrationTest;
 import com.clara.ops.challenge.documentmanagement.adapter.in.web.dto.ErrorResponse;
+import io.minio.ListObjectsArgs;
 import io.minio.MinioClient;
-import io.minio.StatObjectArgs;
+import io.minio.Result;
+import io.minio.messages.Item;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,11 +30,15 @@ class UploadDocumentIntegrationTest extends AbstractIntegrationTest {
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
 
-    // verify object exists in MinIO
-    var stat =
-        minioClient.statObject(
-            StatObjectArgs.builder().bucket(BUCKET).object("alice/invoice.pdf").build());
-    assertThat(stat.size()).isEqualTo(pdfBytes.length);
+    // verify object exists in MinIO — storagePath is alice/{uuid}/invoice.pdf so we list
+    // recursively under the user prefix rather than asserting a fixed key
+    long storedSize = -1;
+    for (Result<Item> result :
+        minioClient.listObjects(
+            ListObjectsArgs.builder().bucket(BUCKET).prefix("alice/").recursive(true).build())) {
+      storedSize = result.get().size();
+    }
+    assertThat(storedSize).isEqualTo(pdfBytes.length);
   }
 
   @Test

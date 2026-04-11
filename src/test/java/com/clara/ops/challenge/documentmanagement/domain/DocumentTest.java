@@ -16,7 +16,10 @@ class DocumentTest {
 
     assertThat(doc.id()).isNull();
     assertThat(doc.createdAt()).isNull();
-    assertThat(doc.storagePath()).isEqualTo("alice/report.pdf");
+    // storagePath is user/uuid/name — UUID makes each upload attempt's path unique so that
+    // concurrent duplicate uploads cannot clobber each other's MinIO objects. See ADR-009.
+    assertThat(doc.storagePath())
+        .matches("alice/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/report\\.pdf");
     assertThat(doc.tags()).containsExactly("finance");
   }
 
@@ -53,7 +56,8 @@ class DocumentTest {
   void newUpload_nameWithoutPdfExtension_isAccepted() {
     Document doc = Document.newUpload("alice", "report", List.of(), 1024L, "application/pdf");
     assertThat(doc.name()).isEqualTo("report");
-    assertThat(doc.storagePath()).isEqualTo("alice/report");
+    assertThat(doc.storagePath())
+        .matches("alice/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/report");
   }
 
   @Test

@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.matches;
 import static org.mockito.Mockito.*;
 
 import com.clara.ops.challenge.documentmanagement.application.port.in.UploadDocumentCommand;
@@ -57,7 +59,8 @@ class UploadDocumentServiceImplTest {
     Document result = service.upload(cmd);
 
     assertThat(result.id()).isEqualTo(1L);
-    verify(documentStorage).store(eq("alice/report.pdf"), any(), eq(1024L), eq("application/pdf"));
+    verify(documentStorage)
+        .store(matches("alice/.+/report\\.pdf"), any(), eq(1024L), eq("application/pdf"));
     verify(documentRepository).save(any());
   }
 
@@ -80,8 +83,11 @@ class UploadDocumentServiceImplTest {
 
     assertThatThrownBy(() -> service.upload(cmd)).isInstanceOf(DuplicateDocumentException.class);
 
-    verify(documentStorage).store(anyString(), any(), anyLong(), anyString());
-    verify(documentStorage).delete("alice/report.pdf");
+    // Capture the storagePath used in store() to assert the same path is passed to delete()
+    org.mockito.ArgumentCaptor<String> pathCaptor =
+        org.mockito.ArgumentCaptor.forClass(String.class);
+    verify(documentStorage).store(pathCaptor.capture(), any(), anyLong(), anyString());
+    verify(documentStorage).delete(pathCaptor.getValue());
   }
 
   @Test
