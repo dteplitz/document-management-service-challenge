@@ -72,7 +72,7 @@ factory method `Document.newUpload(...)`.
 |---------------|----------------|-----------------------------------------------------------------------------------------------------------------------------------|
 | `id`          | `Long`         | Auto-generated primary key (null before save)                                                                                     |
 | `user`        | `String`       | Owner identifier — no path separators or nulls                                                                                    |
-| `name`        | `String`       | File name — must end with `.pdf`, no traversal                                                                                    |
+| `name`        | `String`       | File name — no traversal characters allowed                                                                                       |
 | `tags`        | `List<String>` | Immutable list; no blank entries allowed                                                                                          |
 | `storagePath` | `String`       | Computed: `user/uuid/name` — opaque MinIO key; UUID prevents concurrent duplicate uploads from sharing the same key (see ADR-009) |
 | `fileSize`    | `long`         | Must be > 0                                                                                                                       |
@@ -215,14 +215,14 @@ starvation under sustained load. See ADR-007.
 ### JVM flags (in `Dockerfile`)
 
 ```
-JAVA_OPTS=-Xmx50m -Xms50m -XX:MaxMetaspaceSize=128m -Xss256k
+JAVA_OPTS=-Xmx50m -Xms50m -XX:MaxMetaspaceSize=96m -Xss256k
 ```
 
-|            Flag             |                     Effect                     |
-|-----------------------------|------------------------------------------------|
-| `-Xmx50m -Xms50m`           | Heap fixed at 50MB, never grows                |
-| `-XX:MaxMetaspaceSize=128m` | Caps class metadata; prevents unbounded growth |
-| `-Xss256k`                  | Reduces per-thread stack from 512KB to 256KB   |
+|            Flag            |                     Effect                     |
+|----------------------------|------------------------------------------------|
+| `-Xmx50m -Xms50m`          | Heap fixed at 50MB, never grows                |
+| `-XX:MaxMetaspaceSize=96m` | Caps class metadata; prevents unbounded growth |
+| `-Xss256k`                 | Reduces per-thread stack from 512KB to 256KB   |
 
 ### Downloads — why bytes never touch the service
 
@@ -325,11 +325,10 @@ keeping peak heap from part buffers at 15MB. Configured via
 **MinIO client:** `MinioClient` is a singleton Spring bean. The SDK's HTTP
 client is thread-safe; multiple threads can call `putObject` concurrently.
 
-**Validation under load:** the `LoadUpload500MBTest` integration test
-(`@Tag("heavy")`) sends 10 concurrent 500MB uploads against a real MinIO
-Testcontainers instance and asserts that all complete successfully. The test
-was run with `-Xmx50m` to validate the heap constraint under realistic
-concurrency.
+**Validation under load:** the heavy integration test (`@Tag("heavy")`) sends
+10 concurrent 500MB uploads against a real MinIO Testcontainers instance and
+asserts that all complete successfully. The test was run with `-Xmx50m` to
+validate the heap constraint under realistic concurrency.
 
 ---
 
