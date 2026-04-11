@@ -18,9 +18,12 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Encoding;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.SequenceInputStream;
 import java.net.URI;
+import java.util.Arrays;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
@@ -37,6 +40,8 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/document-management")
 @RequiredArgsConstructor
 public class DocumentController {
+
+  private static final byte[] PDF_MAGIC = {'%', 'P', 'D', 'F'};
 
   private final UploadDocumentService uploadDocumentService;
   private final SearchDocumentService searchDocumentService;
@@ -58,7 +63,14 @@ public class DocumentController {
     if (file.isEmpty()) {
       throw new InvalidDocumentException("file part is required and must not be empty");
     }
-    try (InputStream in = file.getInputStream()) {
+    try (InputStream raw = file.getInputStream()) {
+      byte[] header = raw.readNBytes(4);
+      // Validate magic bytes instead of trusting Content-Type, which clients can spoof
+      if (!Arrays.equals(header, PDF_MAGIC)) {
+        throw new InvalidDocumentException("uploaded file is not a valid PDF");
+      }
+      // Prepend the consumed header bytes so the full stream reaches storage
+      InputStream in = new SequenceInputStream(new ByteArrayInputStream(header), raw);
       Document created =
           uploadDocumentService.upload(
               new UploadDocumentCommand(

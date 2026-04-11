@@ -296,8 +296,6 @@ artifacts and close any remaining gaps.
 - `docs/postman/document-management.postman_collection.json`: Postman
   collection covering all three endpoints with automated test scripts
   (happy path, error cases, pagination, no-URL leak in search)
-- `docs/test-assets/test-document.pdf`: minimal valid PDF included for
-  immediate use with the collection
 - Bug fix: `GlobalExceptionHandler` now handles
   `MissingServletRequestPartException` → 400 instead of falling through
   to the generic 500 handler

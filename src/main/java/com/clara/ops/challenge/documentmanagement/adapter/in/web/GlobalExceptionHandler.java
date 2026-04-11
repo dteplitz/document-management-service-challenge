@@ -7,6 +7,7 @@ import com.clara.ops.challenge.documentmanagement.domain.exception.InvalidDocume
 import com.clara.ops.challenge.documentmanagement.domain.exception.StorageException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -61,6 +62,12 @@ public class GlobalExceptionHandler {
   @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
   public ErrorResponse handleMaxUploadSize(MaxUploadSizeExceededException ex) {
     return new ErrorResponse("PAYLOAD_TOO_LARGE", "file exceeds the maximum allowed size of 500MB");
+  }
+
+  @ExceptionHandler(HttpMessageNotReadableException.class)
+  @ResponseStatus(HttpStatus.BAD_REQUEST)
+  public ErrorResponse handleUnreadableMessage(HttpMessageNotReadableException ex) {
+    return new ErrorResponse("INVALID_REQUEST", "malformed or unreadable request body");
   }
 
   @ExceptionHandler(MissingServletRequestPartException.class)
