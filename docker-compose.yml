@@ -108,15 +108,15 @@ services:
       MINIO_REGION: ${MINIO_REGION:-us-east-1}
       # Server
       SERVER_PORT: 8080
-    deploy:
-      resources:
-        # See ADR-006: the heap is strictly capped at 50MB via the Dockerfile
-        # ENTRYPOINT (-Xmx50m -Xms50m), but the container limit is raised to
-        # 384MB to accommodate unavoidable JVM overhead (metaspace, code cache,
-        # direct buffers, thread stacks). The heap is what actually governs
-        # the streaming upload pipeline.
-        limits:
-          memory: 384M
+    # See ADR-006: the heap is strictly capped at 50MB via the Dockerfile
+    # ENTRYPOINT (-Xmx50m -Xms50m), but the container limit is raised to
+    # 384MB to accommodate unavoidable JVM overhead (metaspace, code cache,
+    # direct buffers, thread stacks). The heap is what actually governs
+    # the streaming upload pipeline.
+    # mem_limit is used instead of deploy.resources.limits (Swarm-only, ignored
+    # by plain `docker compose up`). This ensures the guardrail is enforced in
+    # the standard reviewer flow.
+    mem_limit: 384m
 
 volumes:
   challenge_postgresql_data:
