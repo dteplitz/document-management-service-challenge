@@ -156,18 +156,24 @@ buffers, thread stacks). See ADR-006 for the full rationale.
 
 ```
 HTTP client
-    │ (TCP socket)
+    │ (TCP socket — body NOT read yet for blocked requests)
+    ▼
+UploadAdmissionFilter  ◄── HIGHEST_PRECEDENCE + 10, before DispatcherServlet
+    │ tryAcquire(admissionSemaphore, timeout=15s)
+    │ if no slot: 503 UPLOAD_CAPACITY_EXCEEDED (body never read)
+    │ if slot acquired: chain.doFilter() → body is now read below
     ▼
 Tomcat NIO connector
     │ writes multipart file part to disk immediately
-    │ (file-size-threshold=0, location=${java.io.tmpdir}/multipart)
+    │ (file-size-threshold=1, location=${java.io.tmpdir}/multipart)
+    │ resolve-lazily=true: parsing deferred until @RequestPart is accessed
     ▼
 Disk temp file  ◄── file bytes live here, never in JVM heap
     │
-    │ controller calls cmd.content() → InputStream from temp file
+    │ controller accesses @RequestPart("file") → InputStream from temp file
     ▼
 UploadDocumentServiceImpl.upload()
-    │ acquires Semaphore (max 3 concurrent storage writes)
+    │ acquires storageSemaphore (max 3 concurrent MinIO writes)
     ▼
 MinioDocumentStorageAdapter.store()
     │ calls minioClient.putObject(stream, contentLength, PART_SIZE=5MB)
@@ -178,39 +184,54 @@ MinIO (object storage)
     │ bytes transferred; temp file deleted by Tomcat after request
     ▼
 DocumentRepositoryAdapter.save()  (short DB write, indexed lookup)
+    │
+    ▼
+admissionSemaphore.release()  ◄── in UploadAdmissionFilter finally block
 ```
 
 **Why the file never enters JVM heap:**
 
-1. `file-size-threshold: 0` forces Tomcat to write every multipart file part
-   to a disk-backed temp file before the controller method is even invoked.
-   The controller receives an `InputStream` backed by a `FileInputStream`, not
-   an in-memory buffer.
+1. `UploadAdmissionFilter` acquires a permit before `chain.doFilter()`. At most
+   `upload.admission.max-concurrent` (default: 2) requests proceed past this
+   gate at a time. Blocked requests hold a TCP connection but their bodies are
+   not yet read — no bytes in heap.
 
-2. The MinIO SDK's `putObject` call reads from that `InputStream` in chunks of
+2. `resolve-lazily: true` defers multipart parsing until the controller method
+   accesses the `@RequestPart` parameters, which happens after the admission
+   gate has already been passed.
+
+3. `file-size-threshold: 1` forces Tomcat to write every multipart file part
+   (of size > 1 byte) to a disk-backed temp file. The controller receives an
+   `InputStream` backed by a `FileInputStream`, not an in-memory buffer.
+
+4. The MinIO SDK's `putObject` call reads from that `InputStream` in chunks of
    exactly `PART_SIZE` (5MB). It buffers one part at a time, sends it, and
    reuses the buffer for the next part. A 500MB file is sent as 100 × 5MB parts
    with a constant 5MB heap footprint per upload.
 
-3. Tomcat deletes the temp file after the request completes (built-in cleanup).
+5. Tomcat deletes the temp file after the request completes (built-in cleanup).
 
 ### Concurrency math
 
-|           Component            | Per-upload | × 3 concurrent | Heap budget |
-|--------------------------------|------------|----------------|-------------|
-| MinIO part buffer (5MB)        | 5 MB       | 15 MB          | ✓           |
-| Spring / Hibernate working set | —          | ~25 MB         | ✓           |
-| Remaining headroom             | —          | ~10 MB         | ✓           |
-| **Total**                      |            | **~50 MB**     | **fits**    |
+|              Component               | Per-upload | × 2 admitted | Heap budget |
+|--------------------------------------|------------|--------------|-------------|
+| MinIO part buffer (5MB)              | 5 MB       | 10 MB        | ✓           |
+| Spring / Hibernate working set       | —          | ~25 MB       | ✓           |
+| Remaining headroom                   | —          | ~15 MB       | ✓           |
+| **Total**                            |            | **~50 MB**   | **fits**    |
 
-The `Semaphore(3)` in `UploadDocumentServiceImpl` gates the
-`documentStorage.store(...)` call. HTTP requests 4–10 are accepted immediately
-by Tomcat (their file is written to disk), but they queue at the semaphore
-waiting for a storage slot. This keeps the peak part-buffer allocation bounded
-at 15MB regardless of how many uploads arrive simultaneously.
+Two semaphores work in layers:
 
-Semaphore fairness (`fair = true`) guarantees FIFO ordering, preventing
-starvation under sustained load. See ADR-007.
+- **`admissionSemaphore(2)`** in `UploadAdmissionFilter` — gates multipart
+  parsing. At most 2 request bodies are being read and streamed at any time.
+  Requests 3–N queue here, holding a TCP connection but zero heap.
+- **`storageSemaphore(3)`** in `UploadDocumentServiceImpl` — gates MinIO
+  `putObject` calls. Belt-and-suspenders: since admission ≤ storage, this
+  semaphore never blocks in normal operation but remains a safety net if
+  admission is ever tuned upward.
+
+Both semaphores use `fair = true` for FIFO ordering under sustained load.
+See ADR-007 and ADR-010.
 
 ### JVM flags (in `Dockerfile`)
 
@@ -242,42 +263,54 @@ Pre-signed URL TTL is configurable via `MINIO_PRESIGNED_URL_EXPIRY_SECONDS`
 
 Step-by-step byte trace for a 500MB upload:
 
-1. **Tomcat NIO accept** — HTTP request arrives on the NIO connector. Tomcat
-   begins reading the multipart body.
+1. **Admission gate** — `UploadAdmissionFilter.tryAcquire(admissionSemaphore)`
+   runs before `chain.doFilter()`. If no slot is available within 15s, the
+   filter writes a `503` response directly and returns — the request body is
+   never read. If a slot is acquired, the request proceeds.
 
-2. **Disk offload** — because `file-size-threshold=0`, the multipart parser
+2. **Tomcat NIO accept** — control passes to the servlet container. Tomcat
+   begins reading the multipart body from the socket.
+
+3. **Disk offload** — because `file-size-threshold=1`, the multipart parser
    writes the file part bytes to a temp file under `${java.io.tmpdir}/multipart`
    as they arrive from the socket. The JVM heap is not involved.
 
-3. **Controller invocation** — once the multipart body is fully received and
-   on disk, Spring MVC invokes `DocumentController.upload()`. The
+4. **Controller invocation** — Spring MVC invokes `DocumentController.upload()`.
+   With `resolve-lazily=true`, multipart parsing is deferred until this point.
    `MultipartFile.getInputStream()` returns a `FileInputStream` over the temp
    file.
 
-4. **Domain construction** — `Document.newUpload(...)` validates metadata and
+5. **PDF magic byte validation** — the controller reads the first 4 bytes and
+   verifies the `%PDF` magic signature. A `SequenceInputStream` prepends those
+   bytes back so the full stream reaches MinIO unmodified.
+
+6. **Domain construction** — `Document.newUpload(...)` validates metadata and
    builds the domain object. This allocates a few small strings and a list —
    negligible.
 
-5. **Duplicate pre-check** — `documentRepository.existsByUserAndName(...)` runs
+7. **Duplicate pre-check** — `documentRepository.existsByUserAndName(...)` runs
    a single indexed SQL query (`WHERE "user" = ? AND name = ?`). Cheap.
 
-6. **Semaphore acquire** — `storageSemaphore.acquireUninterruptibly()` blocks
-   if 3 uploads are already in progress. FIFO wait, no spinning.
+8. **Storage semaphore acquire** — `storageSemaphore.acquireUninterruptibly()`
+   blocks if 3 MinIO writes are already in progress. FIFO wait, no spinning.
 
-7. **MinIO `putObject`** — the SDK opens a connection to MinIO and reads 5MB
+9. **MinIO `putObject`** — the SDK opens a connection to MinIO and reads 5MB
    chunks from the `FileInputStream`, sending each as a multipart part. For a
    500MB file: 100 iterations, one 5MB byte[] allocation reused across parts.
 
-8. **Semaphore release** — regardless of outcome (try/finally).
+10. **Storage semaphore release** — regardless of outcome (try/finally).
 
-9. **Postgres save** — `documentRepository.save(document)` inserts the metadata
-   row. If a duplicate constraint fires here (race condition), the MinIO object
-   is deleted as compensation (`safeDelete`).
+11. **Postgres save** — `documentRepository.save(document)` inserts the metadata
+    row. If a duplicate constraint fires here (race condition), the MinIO object
+    is deleted as compensation (`safeDelete`).
 
-10. **Response** — 201 Created with a `Location` header pointing to the
+12. **Response** — 201 Created with a `Location` header pointing to the
     download endpoint for the new document.
 
-11. **Temp file cleanup** — Tomcat deletes the temp file after the response is
+13. **Admission semaphore release** — `UploadAdmissionFilter` finally block
+    releases the permit, allowing the next queued request to proceed.
+
+14. **Temp file cleanup** — Tomcat deletes the temp file after the response is
     committed.
 
 ---
@@ -287,16 +320,23 @@ Step-by-step byte trace for a 500MB upload:
 All domain exceptions are translated to HTTP responses by `GlobalExceptionHandler`
 (`@RestControllerAdvice`). The response body is always `ErrorResponse { code, message }`.
 
-|       Exception / condition       | HTTP status |      Error code      |
-|-----------------------------------|-------------|----------------------|
-| `InvalidDocumentException`        | 400         | `INVALID_DOCUMENT`   |
-| `MethodArgumentNotValidException` | 400         | `VALIDATION_FAILED`  |
-| `MultipartException`              | 400         | `INVALID_REQUEST`    |
-| `DuplicateDocumentException`      | 409         | `DUPLICATE_DOCUMENT` |
-| `DocumentNotFoundException`       | 404         | `DOCUMENT_NOT_FOUND` |
-| `MaxUploadSizeExceededException`  | 413         | `PAYLOAD_TOO_LARGE`  |
-| `StorageException`                | 500         | `STORAGE_ERROR`      |
-| Any other `Exception`             | 500         | `INTERNAL_ERROR`     |
+|       Exception / condition        | HTTP status |        Error code          |
+|------------------------------------|-------------|----------------------------|
+| Admission gate timeout             | 503         | `UPLOAD_CAPACITY_EXCEEDED` |
+| `InvalidDocumentException`         | 400         | `INVALID_DOCUMENT`         |
+| `MethodArgumentNotValidException`  | 400         | `VALIDATION_FAILED`        |
+| `HttpMessageNotReadableException`  | 400         | `INVALID_REQUEST`          |
+| `MultipartException`               | 400         | `INVALID_REQUEST`          |
+| `DuplicateDocumentException`       | 409         | `DUPLICATE_DOCUMENT`       |
+| `DocumentNotFoundException`        | 404         | `DOCUMENT_NOT_FOUND`       |
+| `MaxUploadSizeExceededException`   | 413         | `PAYLOAD_TOO_LARGE`        |
+| `StorageException`                 | 500         | `STORAGE_ERROR`            |
+| Any other `Exception`              | 500         | `INTERNAL_ERROR`           |
+
+The 503 response is written directly by `UploadAdmissionFilter` (outside Spring
+MVC), not via `GlobalExceptionHandler`. The JSON envelope format is identical:
+`{"code":"UPLOAD_CAPACITY_EXCEEDED","message":"..."}` using the same
+`ObjectMapper` bean.
 
 `StorageException` and the catch-all handler log the full exception at ERROR
 level. All other handlers are silent (the error code in the response is
@@ -317,10 +357,17 @@ lookup). Three connections are sufficient to service 10 concurrent uploads
 without starvation, because the DB interaction happens before and after the
 storage write, not during it.
 
-**Storage semaphore:** `Semaphore(3, fair=true)` in
-`UploadDocumentServiceImpl`. Limits concurrent MinIO `putObject` calls to 3,
-keeping peak heap from part buffers at 15MB. Configured via
-`upload.storage.max-concurrent` (default: 3).
+**Admission semaphore:** `Semaphore(2, fair=true)` in `UploadAdmissionFilter`.
+Limits how many upload requests may proceed past the filter at a time — i.e.,
+how many are allowed to read their request body and start parsing multipart.
+Configured via `upload.admission.max-concurrent` (default: 2). See ADR-010.
+
+**Storage semaphore:** `Semaphore(3, fair=true)` in `UploadDocumentServiceImpl`.
+Second line of defence: limits concurrent MinIO `putObject` calls to 3, keeping
+peak heap from part buffers at 15MB. Configured via
+`upload.storage.max-concurrent` (default: 3). Since admission ≤ storage, this
+semaphore does not block in normal operation but remains a safety net if
+admission is tuned upward. See ADR-007.
 
 **MinIO client:** `MinioClient` is a singleton Spring bean. The SDK's HTTP
 client is thread-safe; multiple threads can call `putObject` concurrently.
@@ -352,6 +399,8 @@ variables:
 | `MINIO_BUCKET`                       | `document-bucket` | MinIO client   | Bucket name for stored objects                     |
 | `MINIO_REGION`                       | `us-east-1`       | MinIO client   | Region for AWS Signature V4 pre-signed URL signing |
 | `MINIO_PRESIGNED_URL_EXPIRY_SECONDS` | `900`             | MinIO adapter  | Pre-signed URL TTL in seconds (default: 15 min)    |
+| `UPLOAD_ADMISSION_MAX_CONCURRENT`    | `2`               | Admission filter | Max concurrent uploads past the admission gate   |
+| `UPLOAD_ADMISSION_ACQUIRE_TIMEOUT`   | `15` (seconds)    | Admission filter | Seconds to wait for an admission slot before 503 |
 | `UPLOAD_STORAGE_MAX_CONCURRENT`      | `3`               | Upload service | Max concurrent MinIO writes (semaphore size)       |
 | `JAVA_OPTS`                          | (set in Docker)   | JVM            | JVM flags including `-Xmx50m -Xss256k`             |
 

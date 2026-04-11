@@ -177,6 +177,12 @@ curl -X POST http://localhost:8080/document-management/upload \
 {"code":"DUPLICATE_DOCUMENT","message":"document 'contract.pdf' already exists for user 'alice'"}
 ```
 
+**Capacity exhausted (too many concurrent uploads):** `503 Service Unavailable`
+
+```json
+{"code":"UPLOAD_CAPACITY_EXCEEDED","message":"upload capacity temporarily exhausted, retry later"}
+```
+
 ### Search documents
 
 All filters are optional. Results are paginated and sorted by `createdAt` descending by default.

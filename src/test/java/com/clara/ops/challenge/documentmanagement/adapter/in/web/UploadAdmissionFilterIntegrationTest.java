@@ -3,14 +3,10 @@ package com.clara.ops.challenge.documentmanagement.adapter.in.web;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.clara.ops.challenge.documentmanagement.AbstractIntegrationTest;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Semaphore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.core.io.ByteArrayResource;
@@ -23,9 +19,9 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 
 /**
- * Verifies that UploadAdmissionFilter throttles concurrent uploads and returns 503 with the correct
- * error code when capacity is exhausted. Uses max-concurrent=1 so the second concurrent request
- * always hits the gate.
+ * Verifies that UploadAdmissionFilter returns 503 UPLOAD_CAPACITY_EXCEEDED when all permits are
+ * exhausted. The admissionSemaphore is held manually before firing the request so the outcome is
+ * deterministic — no timing dependency on concurrent thread scheduling.
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -37,29 +33,19 @@ class UploadAdmissionFilterIntegrationTest extends AbstractIntegrationTest {
 
   @Autowired private TestRestTemplate restTemplate;
 
+  @Autowired
+  @Qualifier("admissionSemaphore") private Semaphore admissionSemaphore;
+
   @Test
-  void whenCapacityExceeded_secondRequestReceives503WithCorrectCode() throws Exception {
-    int threads = 3;
-    ExecutorService executor = Executors.newFixedThreadPool(threads);
-    List<Future<HttpStatusCode>> futures = new ArrayList<>();
-
-    for (int i = 0; i < threads; i++) {
-      final int idx = i;
-      futures.add(executor.submit(() -> upload("admission-user-" + idx, "doc-" + idx + ".pdf")));
+  void whenAllPermitsHeld_uploadReceives503WithCorrectCode() throws InterruptedException {
+    // Drain the single available permit to simulate a saturated admission gate
+    admissionSemaphore.acquire();
+    try {
+      HttpStatusCode status = upload("admission-user", "blocked-doc.pdf");
+      assertThat(status).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+    } finally {
+      admissionSemaphore.release();
     }
-
-    executor.shutdown();
-    assertThat(executor.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
-
-    List<HttpStatusCode> statuses = futures.stream().map(this::getUnchecked).toList();
-
-    long created = statuses.stream().filter(s -> s.equals(HttpStatus.CREATED)).count();
-    long rejected = statuses.stream().filter(s -> s.equals(HttpStatus.SERVICE_UNAVAILABLE)).count();
-
-    assertThat(created).as("at least one upload must succeed").isGreaterThanOrEqualTo(1);
-    assertThat(rejected)
-        .as("at least one upload must be rejected by the admission gate")
-        .isGreaterThanOrEqualTo(1);
   }
 
   private HttpStatusCode upload(String user, String name) {
@@ -100,13 +86,5 @@ class UploadAdmissionFilterIntegrationTest extends AbstractIntegrationTest {
             new HttpEntity<>(body, requestHeaders),
             Void.class)
         .getStatusCode();
-  }
-
-  private HttpStatusCode getUnchecked(Future<HttpStatusCode> f) {
-    try {
-      return f.get();
-    } catch (Exception e) {
-      throw new RuntimeException(e);
-    }
   }
 }

@@ -602,6 +602,107 @@ contains the full path, which is what the download pre-signed URL uses.
 
 ---
 
+## ADR-010 — Concurrent upload safety: HTTP admission gate separates from storage throttle
+
+**Status:** Accepted
+**Date:** 2026-04-11
+
+### Context
+
+QA load testing revealed that 3 or more concurrent uploads of 25MB each caused
+`java.lang.OutOfMemoryError: Java heap space` under the 50MB heap constraint,
+despite the `Semaphore(3)` in `UploadDocumentServiceImpl` introduced by ADR-007.
+
+Root cause: the storage semaphore fires too late. By the time a request reaches
+`UploadDocumentServiceImpl.upload()`, Spring MVC has already resolved the
+`@RequestPart("file")` parameter, which causes Tomcat to parse the multipart
+body and the MinIO SDK has a 5MB part buffer in flight. With N requests
+concurrently in this state, the aggregate pressure on the 50MB heap grows
+proportionally to N — the semaphore only ever serializes the MinIO write, not
+the memory-intensive parse phase.
+
+A single 400MB upload succeeded in the same environment, confirming the root
+cause is concurrent heap pressure during multipart parsing, not streaming itself.
+
+### Decision
+
+Introduce `UploadAdmissionFilter`, an `OncePerRequestFilter` registered via
+`FilterRegistrationBean` for `POST /document-management/upload` at order
+`Ordered.HIGHEST_PRECEDENCE + 10`. The filter acquires a permit from a
+dedicated `admissionSemaphore` **before** calling `chain.doFilter(...)`. This
+ensures the multipart body is parsed and the MinIO SDK is invoked for at most
+`upload.admission.max-concurrent` requests at a time. Requests that do not
+acquire a permit within `upload.admission.acquire-timeout-seconds` receive
+`503 Service Unavailable` with code `UPLOAD_CAPACITY_EXCEEDED`.
+
+The existing `storageSemaphore` in `UploadDocumentServiceImpl` is retained as a
+second line of defence: it continues to limit concurrent MinIO `putObject` calls
+to 3, keeping peak part-buffer allocation at 15MB (3 × PART_SIZE). The admission
+gate now sits upstream of it.
+
+`spring.servlet.multipart.resolve-lazily=true` is added so that Spring's
+multipart resolution is deferred until the controller method runs — after the
+admission filter has already acquired the permit.
+
+`spring.servlet.multipart.file-size-threshold` is corrected from `0` to `1`
+(1 byte). Tomcat's DiskFileItem threshold comparison is `> threshold`; a value
+of `0` is technically correct (any file of size > 0 goes to disk) but is
+changed to `1` to be explicit and close the edge case where `0` could be
+misinterpreted as "disabled" in future Tomcat versions.
+
+### Rationale
+
+- **Gate at the earliest possible point.** Moving the semaphore upstream of
+  multipart parsing means the body is only read for admitted requests. Blocked
+  requests hold an open TCP connection whose body has not yet been consumed —
+  the client's bytes sit in the OS socket buffer, never in JVM heap.
+
+- **Two separate responsibilities, two separate semaphores.** The admission
+  semaphore protects against heap pressure during parsing. The storage
+  semaphore protects against part-buffer heap pressure during MinIO writes.
+  Conflating them into one would either over-restrict (limiting the queue
+  depth at admission to 3) or under-protect (letting admission be as large
+  as 10 while still allowing 10 × 5MB part buffers).
+
+- **503 with backpressure is correct HTTP.** The alternative of blocking
+  indefinitely would hold Tomcat threads and eventually exhaust the thread
+  pool. Fail-fast with 503 and a short `acquire-timeout-seconds` is more
+  predictable: the client is told explicitly that capacity is exhausted and
+  can retry.
+
+- **Not streaming multipart without MultipartFile.** Replacing the endpoint
+  with a fully custom multipart streaming parser (no `MultipartFile`) would
+  eliminate Tomcat's parse overhead entirely and be the most robust long-term
+  solution. It was deferred: (a) it is a higher-risk rewrite on a tight
+  deadline; (b) the filter solution demonstrably fixes the OOM under the
+  measured load; (c) the follow-up is documented here for a future iteration.
+
+### Consequences
+
+- At most `upload.admission.max-concurrent` (default: 2) uploads are parsed
+  and streaming concurrently. Requests 3–N are queued at the filter level —
+  they hold a Tomcat thread and an open TCP connection but impose no heap
+  pressure until admitted.
+- Clients that cannot be served within the timeout receive `503
+  UPLOAD_CAPACITY_EXCEEDED`. This is the expected behavior under sustained
+  load; clients should implement retry with backoff.
+- `acquire-timeout-seconds` (default: 15) must be set below Tomcat's
+  `connectionTimeout` (default: 20s) to avoid the socket being dropped before
+  the filter can release the connection cleanly.
+- `upload.admission.max-concurrent` is intentionally set to 20 in the test
+  profile (`application-test.yml`) so that existing integration tests
+  (`ConcurrentUploadIntegrationTest`) are not throttled. The
+  `UploadAdmissionFilterIntegrationTest` uses `max-concurrent=1` via
+  `@SpringBootTest(properties = {...})` to test the rejection path in
+  isolation.
+- **Follow-up (not implemented):** Replace the `MultipartFile`-based endpoint
+  with true multipart streaming (e.g. Apache Commons FileUpload streaming API
+  or a custom `InputStream`-based parser). This would remove Tomcat's
+  internal buffering entirely and allow a higher `admission.max-concurrent`
+  with the same heap budget.
+
+---
+
 ## Open questions
 
 ### [OPEN QUESTION #1] — Upload endpoint contract
