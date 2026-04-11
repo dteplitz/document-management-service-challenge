@@ -3,6 +3,7 @@ package com.clara.ops.challenge.documentmanagement.domain;
 import com.clara.ops.challenge.documentmanagement.domain.exception.InvalidDocumentException;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 public record Document(
     Long id,
@@ -21,7 +22,15 @@ public record Document(
   public static Document newUpload(
       String user, String name, List<String> tags, long fileSize, String fileType) {
     validate(user, name, tags, fileSize, fileType);
-    return new Document(null, user, name, tags, user + "/" + name, fileSize, fileType, null);
+    return new Document(
+        null,
+        user,
+        name,
+        tags,
+        user + "/" + UUID.randomUUID() + "/" + name,
+        fileSize,
+        fileType,
+        null);
   }
 
   private static void validate(
