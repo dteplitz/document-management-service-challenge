@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
@@ -60,6 +61,13 @@ public class GlobalExceptionHandler {
   @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
   public ErrorResponse handleMaxUploadSize(MaxUploadSizeExceededException ex) {
     return new ErrorResponse("PAYLOAD_TOO_LARGE", "file exceeds the maximum allowed size of 500MB");
+  }
+
+  @ExceptionHandler(MissingServletRequestPartException.class)
+  @ResponseStatus(HttpStatus.BAD_REQUEST)
+  public ErrorResponse handleMissingPart(MissingServletRequestPartException ex) {
+    return new ErrorResponse(
+        "INVALID_REQUEST", "required request part missing: " + ex.getRequestPartName());
   }
 
   @ExceptionHandler(MultipartException.class)
