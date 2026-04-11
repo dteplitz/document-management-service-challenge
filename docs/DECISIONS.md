@@ -679,10 +679,18 @@ misinterpreted as "disabled" in future Tomcat versions.
 
 ### Consequences
 
-- At most `upload.admission.max-concurrent` (default: 2) uploads are parsed
-  and streaming concurrently. Requests 3–N are queued at the filter level —
+- At most `upload.admission.max-concurrent` (default: **1**) uploads are parsed
+  and streaming concurrently. Remaining requests are queued at the filter level —
   they hold a Tomcat thread and an open TCP connection but impose no heap
   pressure until admitted.
+- **Why 1, not 2 (post-incident update, 2026-04-11):** The initial default was 2.
+  A production OOM incident (`java.lang.OutOfMemoryError: Java heap space`,
+  container exit code 3) confirmed that two concurrent 25MB uploads exhausted the
+  50MB heap. Diagnosis: two simultaneous MinIO part buffers (2 × 5MB = 10MB) on
+  top of the Spring/Tomcat/Hibernate active working set exceeded the heap budget.
+  Heap dump confirmed. Default lowered to 1: peak MinIO allocation is now one
+  5MB `byte[]` at a time, which fits comfortably within the budget. The 10-upload
+  throughput requirement is still met — requests queue and are admitted one by one.
 - Clients that cannot be served within the timeout receive `503
   UPLOAD_CAPACITY_EXCEEDED`. This is the expected behavior under sustained
   load; clients should implement retry with backoff.

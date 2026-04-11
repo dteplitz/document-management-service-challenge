@@ -213,21 +213,30 @@ admissionSemaphore.release()  ◄── in UploadAdmissionFilter finally block
 
 ### Concurrency math
 
-|              Component               | Per-upload | × 2 admitted | Heap budget |
-|--------------------------------------|------------|--------------|-------------|
-| MinIO part buffer (5MB)              | 5 MB       | 10 MB        | ✓           |
-| Spring / Hibernate working set       | —          | ~25 MB       | ✓           |
-| Remaining headroom                   | —          | ~15 MB       | ✓           |
-| **Total**                            |            | **~50 MB**   | **fits**    |
+|           Component            | Per-upload | × 1 admitted | Heap budget |
+|--------------------------------|------------|--------------|-------------|
+| MinIO part buffer (5MB)        | 5 MB       | 5 MB         | ✓           |
+| Spring / Hibernate working set | —          | ~35 MB       | ✓           |
+| Remaining headroom             | —          | ~10 MB       | ✓           |
+| **Total**                      |            | **~50 MB**   | **fits**    |
+
+> **Why `admissionSemaphore(1)` and not 2?**
+> A production OOM incident (`java.lang.OutOfMemoryError: Java heap space`,
+> container exit code 3, 2026-04-11) confirmed that two concurrent 25MB
+> uploads exhausted the 50MB heap. Two simultaneous MinIO part buffers
+> (2 × 5MB = 10MB) combined with the active Spring/Tomcat/Hibernate working
+> set exceeded the budget. Admitting one upload at a time limits peak MinIO
+> allocation to a single 5MB `byte[]`. See ADR-010 for the full post-incident
+> analysis.
 
 Two semaphores work in layers:
 
-- **`admissionSemaphore(2)`** in `UploadAdmissionFilter` — gates multipart
-  parsing. At most 2 request bodies are being read and streamed at any time.
-  Requests 3–N queue here, holding a TCP connection but zero heap.
+- **`admissionSemaphore(1)`** in `UploadAdmissionFilter` — gates multipart
+  parsing. At most 1 request body is being read and streamed at any time.
+  All other requests queue here, holding a TCP connection but zero heap.
 - **`storageSemaphore(3)`** in `UploadDocumentServiceImpl` — gates MinIO
-  `putObject` calls. Belt-and-suspenders: since admission ≤ storage, this
-  semaphore never blocks in normal operation but remains a safety net if
+  `putObject` calls. Belt-and-suspenders: since admission (1) ≤ storage (3),
+  this semaphore never blocks in normal operation but remains a safety net if
   admission is ever tuned upward.
 
 Both semaphores use `fair = true` for FIFO ordering under sustained load.
@@ -320,18 +329,18 @@ Step-by-step byte trace for a 500MB upload:
 All domain exceptions are translated to HTTP responses by `GlobalExceptionHandler`
 (`@RestControllerAdvice`). The response body is always `ErrorResponse { code, message }`.
 
-|       Exception / condition        | HTTP status |        Error code          |
-|------------------------------------|-------------|----------------------------|
-| Admission gate timeout             | 503         | `UPLOAD_CAPACITY_EXCEEDED` |
-| `InvalidDocumentException`         | 400         | `INVALID_DOCUMENT`         |
-| `MethodArgumentNotValidException`  | 400         | `VALIDATION_FAILED`        |
-| `HttpMessageNotReadableException`  | 400         | `INVALID_REQUEST`          |
-| `MultipartException`               | 400         | `INVALID_REQUEST`          |
-| `DuplicateDocumentException`       | 409         | `DUPLICATE_DOCUMENT`       |
-| `DocumentNotFoundException`        | 404         | `DOCUMENT_NOT_FOUND`       |
-| `MaxUploadSizeExceededException`   | 413         | `PAYLOAD_TOO_LARGE`        |
-| `StorageException`                 | 500         | `STORAGE_ERROR`            |
-| Any other `Exception`              | 500         | `INTERNAL_ERROR`           |
+|       Exception / condition       | HTTP status |         Error code         |
+|-----------------------------------|-------------|----------------------------|
+| Admission gate timeout            | 503         | `UPLOAD_CAPACITY_EXCEEDED` |
+| `InvalidDocumentException`        | 400         | `INVALID_DOCUMENT`         |
+| `MethodArgumentNotValidException` | 400         | `VALIDATION_FAILED`        |
+| `HttpMessageNotReadableException` | 400         | `INVALID_REQUEST`          |
+| `MultipartException`              | 400         | `INVALID_REQUEST`          |
+| `DuplicateDocumentException`      | 409         | `DUPLICATE_DOCUMENT`       |
+| `DocumentNotFoundException`       | 404         | `DOCUMENT_NOT_FOUND`       |
+| `MaxUploadSizeExceededException`  | 413         | `PAYLOAD_TOO_LARGE`        |
+| `StorageException`                | 500         | `STORAGE_ERROR`            |
+| Any other `Exception`             | 500         | `INTERNAL_ERROR`           |
 
 The 503 response is written directly by `UploadAdmissionFilter` (outside Spring
 MVC), not via `GlobalExceptionHandler`. The JSON envelope format is identical:
@@ -339,8 +348,11 @@ MVC), not via `GlobalExceptionHandler`. The JSON envelope format is identical:
 `ObjectMapper` bean.
 
 `StorageException` and the catch-all handler log the full exception at ERROR
-level. All other handlers are silent (the error code in the response is
-sufficient for the client).
+level. `DuplicateDocumentException`, `InvalidDocumentException`, and
+`DocumentNotFoundException` log a one-line WARN (status + message) — enough
+to observe client error patterns in production without stack traces.
+`UploadDocumentServiceImpl` also logs a WARN when a duplicate is detected
+at the pre-check stage (before storage is attempted).
 
 ---
 
@@ -357,16 +369,18 @@ lookup). Three connections are sufficient to service 10 concurrent uploads
 without starvation, because the DB interaction happens before and after the
 storage write, not during it.
 
-**Admission semaphore:** `Semaphore(2, fair=true)` in `UploadAdmissionFilter`.
+**Admission semaphore:** `Semaphore(1, fair=true)` in `UploadAdmissionFilter`.
 Limits how many upload requests may proceed past the filter at a time — i.e.,
 how many are allowed to read their request body and start parsing multipart.
-Configured via `upload.admission.max-concurrent` (default: 2). See ADR-010.
+Configured via `upload.admission.max-concurrent` (default: **1**). The default
+was lowered from 2 to 1 after a confirmed production OOM: two concurrent MinIO
+part buffers (10MB) plus the active working set exceeded the 50MB heap. See ADR-010.
 
 **Storage semaphore:** `Semaphore(3, fair=true)` in `UploadDocumentServiceImpl`.
 Second line of defence: limits concurrent MinIO `putObject` calls to 3, keeping
-peak heap from part buffers at 15MB. Configured via
-`upload.storage.max-concurrent` (default: 3). Since admission ≤ storage, this
-semaphore does not block in normal operation but remains a safety net if
+peak heap from part buffers bounded at 15MB. Configured via
+`upload.storage.max-concurrent` (default: 3). Since admission (1) ≤ storage (3),
+this semaphore never blocks in normal operation but remains a safety net if
 admission is tuned upward. See ADR-007.
 
 **MinIO client:** `MinioClient` is a singleton Spring bean. The SDK's HTTP
@@ -387,22 +401,22 @@ Large-file streaming (up to 500MB) and peak memory are validated by
 All configuration is externalized. The application reads these environment
 variables:
 
-|               Variable               |      Default      |    Consumer    |                    Description                     |
-|--------------------------------------|-------------------|----------------|----------------------------------------------------|
-| `SPRING_DATASOURCE_URL`              | (required)        | Hikari / JPA   | JDBC URL for PostgreSQL                            |
-| `SPRING_DATASOURCE_USERNAME`         | (required)        | Hikari         | DB username                                        |
-| `SPRING_DATASOURCE_PASSWORD`         | (required)        | Hikari         | DB password                                        |
-| `SERVER_PORT`                        | `8080`            | Tomcat         | HTTP port                                          |
-| `MINIO_ENDPOINT`                     | (required)        | MinIO client   | MinIO server URL (e.g. `http://minio:9000`)        |
-| `MINIO_ACCESS_KEY`                   | (required)        | MinIO client   | Service-account access key                         |
-| `MINIO_SECRET_KEY`                   | (required)        | MinIO client   | Service-account secret key                         |
-| `MINIO_BUCKET`                       | `document-bucket` | MinIO client   | Bucket name for stored objects                     |
-| `MINIO_REGION`                       | `us-east-1`       | MinIO client   | Region for AWS Signature V4 pre-signed URL signing |
-| `MINIO_PRESIGNED_URL_EXPIRY_SECONDS` | `900`             | MinIO adapter  | Pre-signed URL TTL in seconds (default: 15 min)    |
-| `UPLOAD_ADMISSION_MAX_CONCURRENT`    | `2`               | Admission filter | Max concurrent uploads past the admission gate   |
-| `UPLOAD_ADMISSION_ACQUIRE_TIMEOUT`   | `15` (seconds)    | Admission filter | Seconds to wait for an admission slot before 503 |
-| `UPLOAD_STORAGE_MAX_CONCURRENT`      | `3`               | Upload service | Max concurrent MinIO writes (semaphore size)       |
-| `JAVA_OPTS`                          | (set in Docker)   | JVM            | JVM flags including `-Xmx50m -Xss256k`             |
+|               Variable               |      Default      |     Consumer     |                    Description                     |
+|--------------------------------------|-------------------|------------------|----------------------------------------------------|
+| `SPRING_DATASOURCE_URL`              | (required)        | Hikari / JPA     | JDBC URL for PostgreSQL                            |
+| `SPRING_DATASOURCE_USERNAME`         | (required)        | Hikari           | DB username                                        |
+| `SPRING_DATASOURCE_PASSWORD`         | (required)        | Hikari           | DB password                                        |
+| `SERVER_PORT`                        | `8080`            | Tomcat           | HTTP port                                          |
+| `MINIO_ENDPOINT`                     | (required)        | MinIO client     | MinIO server URL (e.g. `http://minio:9000`)        |
+| `MINIO_ACCESS_KEY`                   | (required)        | MinIO client     | Service-account access key                         |
+| `MINIO_SECRET_KEY`                   | (required)        | MinIO client     | Service-account secret key                         |
+| `MINIO_BUCKET`                       | `document-bucket` | MinIO client     | Bucket name for stored objects                     |
+| `MINIO_REGION`                       | `us-east-1`       | MinIO client     | Region for AWS Signature V4 pre-signed URL signing |
+| `MINIO_PRESIGNED_URL_EXPIRY_SECONDS` | `900`             | MinIO adapter    | Pre-signed URL TTL in seconds (default: 15 min)    |
+| `UPLOAD_ADMISSION_MAX_CONCURRENT`    | `1`               | Admission filter | Max concurrent uploads past the admission gate     |
+| `UPLOAD_ADMISSION_ACQUIRE_TIMEOUT`   | `15` (seconds)    | Admission filter | Seconds to wait for an admission slot before 503   |
+| `UPLOAD_STORAGE_MAX_CONCURRENT`      | `3`               | Upload service   | Max concurrent MinIO writes (semaphore size)       |
+| `JAVA_OPTS`                          | (set in Docker)   | JVM              | JVM flags including `-Xmx50m -Xss256k`             |
 
 See `.env.example` for the full annotated template and `docker/docker-compose.yml`
 for how variables are wired into the container.
