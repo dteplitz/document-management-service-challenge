@@ -19,6 +19,16 @@ import org.springframework.http.*;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 
+/**
+ * Verifies pipeline correctness under concurrent load: 10 simultaneous uploads all persist without
+ * corruption, and duplicate races leave exactly one survivor with no orphaned MinIO objects.
+ *
+ * <p>The test profile raises {@code upload.admission.max-concurrent} to 20 so all 10 threads pass
+ * the admission gate without being throttled, keeping assertions simple (10 × 201). The gate's own
+ * behaviour — 503 when saturated — is covered by {@link UploadAdmissionFilterIntegrationTest},
+ * which runs with {@code admission=1}. Memory safety under the production tuning ({@code
+ * admission=1}) is validated manually via {@code scripts/memory-evidence.sh}.
+ */
 class ConcurrentUploadIntegrationTest extends AbstractIntegrationTest {
 
   @Autowired private TestRestTemplate restTemplate;

@@ -232,7 +232,7 @@ curl http://localhost:8080/document-management/download/1
 **Success:** `200 OK`
 
 ```json
-{"url":"http://localhost:9000/document-bucket/alice/contract.pdf?X-Amz-Algorithm=..."}
+{"url":"http://localhost:9000/document-bucket/alice/550e8400-e29b-41d4-a716-446655440000/contract.pdf?X-Amz-Algorithm=..."}
 ```
 
 The URL is a pre-signed MinIO URL valid for 15 minutes (configurable via

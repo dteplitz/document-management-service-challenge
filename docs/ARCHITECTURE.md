@@ -192,7 +192,7 @@ admissionSemaphore.release()  ◄── in UploadAdmissionFilter finally block
 **Why the file never enters JVM heap:**
 
 1. `UploadAdmissionFilter` acquires a permit before `chain.doFilter()`. At most
-   `upload.admission.max-concurrent` (default: 2) requests proceed past this
+   `upload.admission.max-concurrent` (default: 1) requests proceed past this
    gate at a time. Blocked requests hold a TCP connection but their bodies are
    not yet read — no bytes in heap.
 
@@ -414,9 +414,9 @@ variables:
 | `MINIO_REGION`                       | `us-east-1`       | MinIO client     | Region for AWS Signature V4 pre-signed URL signing |
 | `MINIO_PRESIGNED_URL_EXPIRY_SECONDS` | `900`             | MinIO adapter    | Pre-signed URL TTL in seconds (default: 15 min)    |
 | `UPLOAD_ADMISSION_MAX_CONCURRENT`    | `1`               | Admission filter | Max concurrent uploads past the admission gate     |
-| `UPLOAD_ADMISSION_ACQUIRE_TIMEOUT`   | `15` (seconds)    | Admission filter | Seconds to wait for an admission slot before 503   |
+| `UPLOAD_ADMISSION_ACQUIRE_TIMEOUT_SECONDS` | `15`        | Admission filter | Seconds to wait for an admission slot before 503   |
 | `UPLOAD_STORAGE_MAX_CONCURRENT`      | `3`               | Upload service   | Max concurrent MinIO writes (semaphore size)       |
 | `JAVA_OPTS`                          | (set in Docker)   | JVM              | JVM flags including `-Xmx50m -Xss256k`             |
 
-See `.env.example` for the full annotated template and `docker/docker-compose.yml`
+See `.env.example` for the full annotated template and `docker-compose.yml`
 for how variables are wired into the container.
