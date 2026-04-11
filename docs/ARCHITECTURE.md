@@ -68,16 +68,16 @@ com.clara.ops.challenge.documentmanagement
 `Document` is a Java `record` — immutable, with all invariants validated in the
 factory method `Document.newUpload(...)`.
 
-|     Field     |      Type      |                  Description                   |
-|---------------|----------------|------------------------------------------------|
-| `id`          | `Long`         | Auto-generated primary key (null before save)  |
-| `user`        | `String`       | Owner identifier — no path separators or nulls |
-| `name`        | `String`       | File name — must end with `.pdf`, no traversal |
-| `tags`        | `List<String>` | Immutable list; no blank entries allowed       |
+|     Field     |      Type      |                                                            Description                                                            |
+|---------------|----------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `id`          | `Long`         | Auto-generated primary key (null before save)                                                                                     |
+| `user`        | `String`       | Owner identifier — no path separators or nulls                                                                                    |
+| `name`        | `String`       | File name — must end with `.pdf`, no traversal                                                                                    |
+| `tags`        | `List<String>` | Immutable list; no blank entries allowed                                                                                          |
 | `storagePath` | `String`       | Computed: `user/uuid/name` — opaque MinIO key; UUID prevents concurrent duplicate uploads from sharing the same key (see ADR-009) |
-| `fileSize`    | `long`         | Must be > 0                                    |
-| `fileType`    | `String`       | Must be `application/pdf` (case-insensitive)   |
-| `createdAt`   | `Instant`      | Set by Hibernate `@CreationTimestamp`          |
+| `fileSize`    | `long`         | Must be > 0                                                                                                                       |
+| `fileType`    | `String`       | Must be `application/pdf` (case-insensitive)                                                                                      |
+| `createdAt`   | `Instant`      | Set by Hibernate `@CreationTimestamp`                                                                                             |
 
 **Security invariant:** `user` and `name` are validated to not contain `/`,
 `\`, or `\0`. This prevents path traversal: a crafted name like
