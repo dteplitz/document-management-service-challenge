@@ -6,8 +6,10 @@
 ## Overview
 
 A backend service for uploading, searching, and downloading PDF documents up to
-500MB in size, designed to operate within a strict 50MB total container memory
-budget. Files are streamed end-to-end, metadata is persisted in PostgreSQL, and
+500MB in size, designed to operate within a strict 50MB JVM heap budget (`-Xmx50m`).
+Container memory limit is enforced at 384MB via `mem_limit` in `docker-compose.yml`
+to accommodate JVM overhead (metaspace, code cache, direct buffers, thread stacks)
+while keeping the heap strictly bounded. See [`docs/DECISIONS.md`](docs/DECISIONS.md) (ADR-006). Files are streamed end-to-end, metadata is persisted in PostgreSQL, and
 binary content is stored in MinIO with pre-signed URL access.
 
 ## Tech stack
@@ -73,30 +75,6 @@ docker compose up --build
 This starts PostgreSQL, MinIO, and the Document Management Service. The service
 is available at `http://localhost:8080`.
 
-### Run locally (infra in Docker, app in IDE)
-
-Start only the infrastructure:
-
-```bash
-docker compose up postgresql minio minio-bootstrap
-```
-
-Then run the app with the `local` Spring profile, which reads `src/main/resources/application-local.yml`:
-
-```bash
-./mvnw spring-boot:run -Dspring-boot.run.profiles=local -Duser.timezone=UTC
-```
-
-**IntelliJ:** open the `document-management-service-challenge/` folder directly, then set VM options
-in the run configuration to:
-
-```
--Dspring.profiles.active=local -Duser.timezone=UTC
-```
-
-> `-Duser.timezone=UTC` is required on machines whose OS timezone is not UTC (e.g. `America/Buenos_Aires`).
-> The `postgres:15` image rejects the connection otherwise.
-
 ### Verify it's up
 
 ```bash
@@ -115,26 +93,41 @@ file.
 
 ## How to test
 
-### Unit tests only (fast)
+### Unit tests only (no Docker needed, fast)
 
 ```bash
 ./mvnw test
 ```
 
-### Full test suite including integration tests (Testcontainers)
+### Integration tests only (requires Docker)
 
 ```bash
-./mvnw verify
+./mvnw test -Pintegration-tests
 ```
 
-Requires Docker to be running.
+### All tests (requires Docker)
+
+```bash
+./mvnw test -Pall-tests
+```
 
 ### Coverage report
 
 ```bash
-./mvnw verify
+./mvnw verify -Pall-tests
 # Open target/site/jacoco/index.html
 ```
+
+### Memory evidence under load
+
+With the stack running (`docker compose up --build`), you can reproduce the memory evidence:
+
+```bash
+bash scripts/memory-evidence.sh
+```
+
+The script uploads a 400MB synthetic file and captures `docker stats` snapshots during the
+transfer. A real captured run is preserved in [`docs/memory-evidence.md`](docs/memory-evidence.md).
 
 ### Code formatting
 
@@ -185,15 +178,15 @@ curl -X POST 'http://localhost:8080/document-management/search?page=0&size=10' \
 
 ```json
 {
-  "pagination": {"page":0,"size":20,"count":1,"totalPages":1,"totalCount":1},
+  "metadata": {"currentPage":0,"itemsPerPage":20,"currentItems":1,"totalPages":1,"totalItems":1},
   "documents": [
     {
       "id": "1",
       "user": "alice",
       "name": "contract.pdf",
       "tags": ["finance","2026"],
-      "fileSize": 1048576,
-      "fileType": "application/pdf",
+      "size": 1048576,
+      "type": "application/pdf",
       "createdAt": "2026-04-10T12:00:00Z"
     }
   ]
