@@ -283,6 +283,38 @@ Spring Boot main class). Spotless applied by Damian. Heavy load test re-run gree
 
 ---
 
+### Slice 5 — Validation tooling & final fixes
+
+**Goal:** make the memory constraint and endpoint behavior verifiable by
+the evaluator without requiring them to read the code. Add runnable evidence
+artifacts and close any remaining gaps.
+
+**Deliverables:**
+
+- `scripts/memory-evidence.sh`: live docker stats during a 400MB upload,
+  timestamped filenames to avoid duplicate conflicts on re-runs
+- `docs/postman/document-management.postman_collection.json`: Postman
+  collection covering all three endpoints with automated test scripts
+  (happy path, error cases, pagination, no-URL leak in search)
+- `docs/test-assets/test-document.pdf`: minimal valid PDF included for
+  immediate use with the collection
+- Bug fix: `GlobalExceptionHandler` now handles
+  `MissingServletRequestPartException` → 400 instead of falling through
+  to the generic 500 handler
+- `docs/ARCHITECTURE.md`: corrected concurrent test description (10×10MB
+  via Testcontainers, not 10×500MB with @Tag("heavy"))
+- `README.md`: Postman import and run instructions added
+
+**Retrospective:** Closed 2026-04-11. Memory evidence run confirms +~10MB
+peak over baseline during a 400MB upload (streaming pipeline holds; GC
+visible in the sample — memory drops mid-transfer as expected). Postman
+collection validated end-to-end against the running stack: all upload,
+search, and download scenarios pass including edge cases. One real bug
+found and fixed during Postman validation: missing file part was returning
+500 instead of 400.
+
+---
+
 ## Out of scope
 
 Things explicitly not part of this implementation, with reasoning:
