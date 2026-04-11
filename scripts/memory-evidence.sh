@@ -22,7 +22,7 @@ UPLOAD_URL="http://localhost:8080/document-management/upload"
 FILE_SIZE_MB=400
 SYNTHETIC_FILE="/tmp/memory-evidence-test.bin"
 USER_FIELD="memory-evidence-script"
-FILE_NAME="evidence-${FILE_SIZE_MB}mb.pdf"
+FILE_NAME="evidence-${FILE_SIZE_MB}mb-$(date +%s).pdf"
 
 echo "============================================================"
 echo "  Memory evidence run — $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
@@ -62,7 +62,7 @@ STATS_FILE="/tmp/memory-evidence-stats.txt"
   while true; do
     docker stats --no-stream --format \
       "$(date -u '+%H:%M:%SZ') MEM={{.MemUsage}} PCT={{.MemPerc}}" \
-      "$CONTAINER_NAME" 2>/dev/null >> "$STATS_FILE" || true
+      "$CONTAINER_NAME" 2>/dev/null | tee -a "$STATS_FILE" || true
     sleep 1
   done
 ) &

@@ -325,10 +325,13 @@ keeping peak heap from part buffers at 15MB. Configured via
 **MinIO client:** `MinioClient` is a singleton Spring bean. The SDK's HTTP
 client is thread-safe; multiple threads can call `putObject` concurrently.
 
-**Validation under load:** the heavy integration test (`@Tag("heavy")`) sends
-10 concurrent 500MB uploads against a real MinIO Testcontainers instance and
-asserts that all complete successfully. The test was run with `-Xmx50m` to
-validate the heap constraint under realistic concurrency.
+**Validation under load:** `ConcurrentUploadIntegrationTest` covers two
+scenarios against a real Testcontainers stack: (1) 10 concurrent 10MB uploads
+all return 201 and produce exactly 10 MinIO objects; (2) two simultaneous
+uploads of the same `(user, name)` pair resolve to exactly one 201 + one 409
+with no orphan object in MinIO (ADR-009 compensation correctness).
+Large-file streaming (up to 500MB) and peak memory under concurrent load are
+validated by the evidence scripts in `scripts/evidence/`.
 
 ---
 

@@ -118,6 +118,29 @@ file.
 # Open target/site/jacoco/index.html
 ```
 
+### Postman collection
+
+A ready-to-run Postman collection is included at
+[`docs/postman/document-management.postman_collection.json`](docs/postman/document-management.postman_collection.json).
+A small test PDF is provided at [`docs/test-assets/test-document.pdf`](docs/test-assets/test-document.pdf).
+
+**Import and run:**
+
+1. Open Postman → **Import** → select `docs/postman/document-management.postman_collection.json`
+2. Click the collection → **Variables** tab → set `testPdfPath` to the absolute path of
+   `docs/test-assets/test-document.pdf` (or any PDF on your machine) → **Save**
+3. Run the folders **in order**: `1. Upload` → `2. Search` → `3. Download`
+   - Each upload request requires selecting the PDF file in the **Body → form-data → file** field
+   - The `documentId` variable is populated automatically from the `Location` header after the first upload
+
+**What the collection covers:**
+
+|   Folder    |                                             Scenarios                                              |
+|-------------|----------------------------------------------------------------------------------------------------|
+| 1. Upload   | Happy path (201), duplicate rejection (409), missing required field (400), missing file part (400) |
+| 2. Search   | No filters, filter by user, filter by tag, filter by name, pagination                              |
+| 3. Download | Pre-signed URL (verified fetchable from MinIO), document not found (404)                           |
+
 ### Memory evidence under load
 
 With the stack running (`docker compose up --build`), you can reproduce the memory evidence:
