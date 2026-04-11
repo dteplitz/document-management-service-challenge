@@ -108,11 +108,15 @@ the current "Unit tests only" claim.
 
 **Done when:** no friction, no surprises, no stale claim in the README.
 
+**Status: closed 2026-04-11.**
+
 ---
 
 ### Step 8 — Commit + push
 
 Conventional commit per step (or logical grouping). Final push to `origin/develop`.
+
+**Status: closed 2026-04-11.**
 
 ---
 

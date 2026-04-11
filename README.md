@@ -128,6 +128,8 @@ bash scripts/memory-evidence.sh
 
 The script uploads a 400MB synthetic file and captures `docker stats` snapshots during the
 transfer. A real captured run is preserved in [`docs/memory-evidence.md`](docs/memory-evidence.md).
+The design supports files up to 500MB; 400MB is used in the evidence script to keep the run
+time reasonable while still exercising the streaming pipeline under significant load.
 
 ### Code formatting
 
