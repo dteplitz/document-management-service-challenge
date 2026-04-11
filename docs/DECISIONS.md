@@ -237,8 +237,9 @@ same `user` and `name`.
 - The application service must catch the constraint violation (or pre-check
   via a `SELECT`) and translate it into a domain exception that the global
   exception handler maps to `409 Conflict`.
-- Storage key in MinIO is exactly `<user>/<name>.pdf`, matching the
-  documented layout.
+- Storage key in MinIO is `<user>/<uuid>/<name>` — superseded by ADR-009,
+  which introduced UUID-keyed paths to prevent concurrent duplicate uploads
+  from sharing the same MinIO object key.
 - A future requirement to support versioning or multiple files with the same
   name would require revisiting this decision.
 

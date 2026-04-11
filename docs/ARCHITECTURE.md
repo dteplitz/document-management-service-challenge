@@ -74,7 +74,7 @@ factory method `Document.newUpload(...)`.
 | `user`        | `String`       | Owner identifier — no path separators or nulls |
 | `name`        | `String`       | File name — must end with `.pdf`, no traversal |
 | `tags`        | `List<String>` | Immutable list; no blank entries allowed       |
-| `storagePath` | `String`       | Computed: `user/name` — the MinIO object key   |
+| `storagePath` | `String`       | Computed: `user/uuid/name` — opaque MinIO key; UUID prevents concurrent duplicate uploads from sharing the same key (see ADR-009) |
 | `fileSize`    | `long`         | Must be > 0                                    |
 | `fileType`    | `String`       | Must be `application/pdf` (case-insensitive)   |
 | `createdAt`   | `Instant`      | Set by Hibernate `@CreationTimestamp`          |
