@@ -36,9 +36,15 @@ public class UploadDocumentServiceImpl implements UploadDocumentService {
             cmd.user(), cmd.name(), cmd.tags(), cmd.contentLength(), cmd.contentType());
 
     if (documentRepository.existsByUserAndName(cmd.user(), cmd.name())) {
+      log.warn("upload rejected — duplicate document: user={}, name={}", cmd.user(), cmd.name());
       throw new DuplicateDocumentException(cmd.user(), cmd.name());
     }
 
+    log.info(
+        "upload started — user: {}, name: {}, size: {} bytes",
+        cmd.user(),
+        cmd.name(),
+        cmd.contentLength());
     storageSemaphore.acquireUninterruptibly();
     try {
       documentStorage.store(
@@ -48,7 +54,14 @@ public class UploadDocumentServiceImpl implements UploadDocumentService {
     }
 
     try {
-      return documentRepository.save(toCreate);
+      Document saved = documentRepository.save(toCreate);
+      log.info(
+          "upload persisted — user: {}, name: {}, documentId: {}, storagePath: {}",
+          cmd.user(),
+          cmd.name(),
+          saved.id(),
+          toCreate.storagePath());
+      return saved;
     } catch (DataIntegrityViolationException e) {
       // Race condition: another request inserted the same (user, name) between our pre-check and
       // this save. Compensate by removing the just-uploaded object from MinIO.

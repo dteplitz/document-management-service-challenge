@@ -26,18 +26,21 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(DuplicateDocumentException.class)
   @ResponseStatus(HttpStatus.CONFLICT)
   public ErrorResponse handleDuplicate(DuplicateDocumentException ex) {
+    log.warn("409 CONFLICT — {}", ex.getMessage());
     return new ErrorResponse("DUPLICATE_DOCUMENT", ex.getMessage());
   }
 
   @ExceptionHandler(InvalidDocumentException.class)
   @ResponseStatus(HttpStatus.BAD_REQUEST)
   public ErrorResponse handleInvalid(InvalidDocumentException ex) {
+    log.warn("400 INVALID_DOCUMENT — {}", ex.getMessage());
     return new ErrorResponse("INVALID_DOCUMENT", ex.getMessage());
   }
 
   @ExceptionHandler(DocumentNotFoundException.class)
   @ResponseStatus(HttpStatus.NOT_FOUND)
   public ErrorResponse handleNotFound(DocumentNotFoundException ex) {
+    log.warn("404 NOT_FOUND — {}", ex.getMessage());
     return new ErrorResponse("DOCUMENT_NOT_FOUND", ex.getMessage());
   }
 

@@ -46,6 +46,10 @@ public class UploadAdmissionFilter extends OncePerRequestFilter {
 
     boolean acquired = false;
     try {
+      int queued = admissionSemaphore.getQueueLength();
+      if (queued > 0) {
+        log.info("upload queued — waiting for slot (queue length: {})", queued);
+      }
       acquired = admissionSemaphore.tryAcquire(acquireTimeoutSeconds, TimeUnit.SECONDS);
       if (!acquired) {
         log.warn(
@@ -57,6 +61,7 @@ public class UploadAdmissionFilter extends OncePerRequestFilter {
             "upload capacity temporarily exhausted, retry later");
         return;
       }
+      log.info("upload admitted — available permits: {}", admissionSemaphore.availablePermits());
       chain.doFilter(request, response);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();

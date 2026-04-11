@@ -45,7 +45,7 @@ public class MinioDocumentStorageAdapter implements DocumentStorage {
                   content, contentLength, PART_SIZE)
               .contentType(contentType)
               .build());
-      log.debug("stored object at {}/{}", props.bucket(), storagePath);
+      log.info("stored object at {}/{}", props.bucket(), storagePath);
     } catch (Exception e) {
       throw new StorageException("failed to store object at " + storagePath, e);
     }
@@ -74,7 +74,7 @@ public class MinioDocumentStorageAdapter implements DocumentStorage {
     try {
       minioClient.removeObject(
           RemoveObjectArgs.builder().bucket(props.bucket()).object(storagePath).build());
-      log.debug("deleted object at {}/{}", props.bucket(), storagePath);
+      log.info("deleted object at {}/{}", props.bucket(), storagePath);
     } catch (Exception e) {
       throw new StorageException("failed to delete object at " + storagePath, e);
     }

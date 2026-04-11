@@ -26,6 +26,7 @@ import java.net.URI;
 import java.util.Arrays;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -39,6 +40,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RestController
 @RequestMapping("/document-management")
 @RequiredArgsConstructor
+@Slf4j
 public class DocumentController {
 
   private static final byte[] PDF_MAGIC = {'%', 'P', 'D', 'F'};
@@ -60,6 +62,12 @@ public class DocumentController {
       @RequestPart("metadata") @Valid UploadMetadataRequest metadata,
       @RequestPart("file") MultipartFile file)
       throws IOException {
+    log.info(
+        "upload request — user: {}, name: {}, size: {} bytes, contentType: {}",
+        metadata.user(),
+        metadata.name(),
+        file.getSize(),
+        file.getContentType());
     if (file.isEmpty()) {
       throw new InvalidDocumentException("file part is required and must not be empty");
     }
@@ -81,6 +89,11 @@ public class DocumentController {
                   file.getSize(),
                   file.getContentType()));
       URI location = URI.create("/document-management/download/" + created.id());
+      log.info(
+          "upload complete — user: {}, name: {}, documentId: {}",
+          metadata.user(),
+          metadata.name(),
+          created.id());
       return ResponseEntity.created(location).build();
     }
   }
@@ -91,6 +104,13 @@ public class DocumentController {
       @ParameterObject
           @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC)
           Pageable pageable) {
+    log.info(
+        "search request — user: {}, name: {}, tags: {}, page: {}, size: {}",
+        filters.user(),
+        filters.name(),
+        filters.tags(),
+        pageable.getPageNumber(),
+        pageable.getPageSize());
     SearchDocumentQuery query =
         new SearchDocumentQuery(filters.user(), filters.name(), filters.tags());
     Page<Document> result = searchDocumentService.search(query, pageable);
@@ -103,6 +123,11 @@ public class DocumentController {
             result.getTotalPages(),
             (int) result.getTotalElements());
 
+    log.info(
+        "search result — total: {}, page: {}/{}",
+        result.getTotalElements(),
+        result.getNumber(),
+        result.getTotalPages());
     List<DocumentResponse> documents =
         result.getContent().stream().map(DocumentController::toResponse).toList();
 
@@ -111,6 +136,7 @@ public class DocumentController {
 
   @GetMapping("/download/{documentId}")
   public ResponseEntity<DocumentDownloadUrlResponse> download(@PathVariable Long documentId) {
+    log.info("download request — documentId: {}", documentId);
     String url = downloadDocumentService.getDownloadUrl(documentId);
     return ResponseEntity.ok(new DocumentDownloadUrlResponse(url));
   }
