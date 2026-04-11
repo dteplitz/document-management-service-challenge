@@ -34,12 +34,16 @@ spring:
   servlet:
     multipart:
       enabled: true
-      # threshold 0 = every uploaded part is written to disk immediately,
-      # never buffered in JVM heap. Foundation of the streaming pipeline.
-      file-size-threshold: 0
+      # 1 byte threshold: any part larger than 1 byte is written to disk immediately.
+      # Using 1 instead of 0 avoids a Tomcat edge case where literal zero disables spill.
+      file-size-threshold: 1
       location: ${java.io.tmpdir}/multipart
       max-file-size: 500MB
       max-request-size: 505MB
+      # Defer multipart resolution until @RequestPart parameters are accessed in the controller.
+      # Combined with UploadAdmissionFilter, this ensures multipart parsing only begins for
+      # requests that have already been admitted through the concurrency gate.
+      resolve-lazily: true
 
 server:
   port: ${SERVER_PORT:8080}
@@ -74,6 +78,11 @@ minio:
   presigned-url-expiry-seconds: ${MINIO_PRESIGNED_URL_EXPIRY_SECONDS:900}
 
 upload:
+  # HTTP admission gate — limits requests past the filter before multipart parsing begins.
+  # Keeps heap bounded under concurrent load. See ADR-008.
+  admission:
+    max-concurrent: 2
+    acquire-timeout-seconds: 15
   storage:
     # Maximum concurrent MinIO uploads. Each slot consumes ~5 MB of heap (one part buffer).
     # 3 slots = 15 MB peak; leaves ~35 MB for the rest of the JVM working set.

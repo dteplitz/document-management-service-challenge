@@ -44,5 +44,7 @@ ENTRYPOINT ["java", \
     "-XX:MaxMetaspaceSize=96m", \
     "-Xss256k", \
     "-XX:+ExitOnOutOfMemoryError", \
+    "-XX:+HeapDumpOnOutOfMemoryError", \
+    "-XX:HeapDumpPath=/tmp/heap.hprof", \
     "-jar", \
     "app.jar"]

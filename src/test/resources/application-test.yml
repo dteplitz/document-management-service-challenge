@@ -4,6 +4,11 @@ spring:
       ddl-auto: validate
 
 upload:
+  # Raise admission ceiling so ConcurrentUploadIntegrationTest (10 threads, all 201) is not
+  # throttled by the filter. UploadAdmissionFilterIntegrationTest overrides this per-test.
+  admission:
+    max-concurrent: 20
+    acquire-timeout-seconds: 60
   storage:
     # Use a single slot in tests to keep heap pressure low and avoid flakiness.
     # The concurrent test still exercises 10 parallel requests; they just queue
