@@ -489,6 +489,118 @@ net for IDE compilation under JDK 25 — they are harmless on JDK 17.
 
 ---
 
+## ADR-009 — Concurrent duplicate uploads: UUID-keyed storage path
+
+**Status:** Accepted
+**Date:** 2026-04-11
+
+### Context
+
+`UploadDocumentServiceImpl` guards against duplicate `(user, name)` uploads
+with a pre-check (`existsByUserAndName`) followed by a DB `INSERT` that carries
+a `UNIQUE` constraint. The `DataIntegrityViolationException` caught on the
+`INSERT` is the backstop: whichever concurrent request loses the DB race is
+compensated by deleting its MinIO object.
+
+This design has a correctness bug when two requests for the **same** `(user, name)`
+are in-flight simultaneously:
+
+1. Both pass the pre-check (neither exists yet in DB).
+2. Both compute `storagePath = user + "/" + name` — the **same physical key**.
+3. Both upload to MinIO at that key. MinIO performs a last-writer-wins overwrite.
+4. One request wins the DB `INSERT`; the other catches `DataIntegrityViolationException`
+   and compensates with `removeObject(storagePath)`.
+5. The compensation deletes the **winning** request's object, leaving the DB row
+   pointing to a non-existent MinIO key.
+
+The result is a document record with a broken download URL — a silent data
+integrity violation.
+
+### Options considered
+
+1. **Per-(user, name) in-process lock** (`Striped<Lock>` or
+   `ConcurrentHashMap<String, Lock>`): serialize the full upload flow for
+   duplicate keys so that only one request ever reaches MinIO. The second
+   request exits early after re-checking the DB inside the lock.
+   - Rejected because: (a) it only works for a single JVM instance — two pods
+     recreate the race between nodes; (b) it holds an HTTP connection open for
+     the entire duration of the first upload (up to minutes for large files);
+     (c) it adds new concurrency infrastructure without fixing the root cause.
+2. **UUID-keyed storage path**: generate a UUID per upload attempt and embed it
+   in `storagePath`, so concurrent requests for the same `(user, name)` write to
+   different physical keys. The compensation therefore only ever deletes the
+   loser's own object.
+   - Selected. See Rationale.
+3. **DB-first / PENDING status**: `INSERT` a row with `status=PENDING` before
+   touching MinIO; only the winning INSERT proceeds to upload; search/download
+   filter on `status=AVAILABLE`. Eliminates the race even across multiple
+   instances and avoids any wasted MinIO write.
+   - Correct and robust, but invasive: requires a new schema column, a
+     schema migration, updated query filters, and new application-layer state
+     management. Over-engineered for a single-instance challenge context.
+
+### Decision
+
+Each upload attempt generates a `UUID` and embeds it in `storagePath`:
+
+```
+storagePath = user + "/" + UUID.randomUUID() + "/" + name
+```
+
+`Document.newUpload` is the only place this is computed. The UUID is not
+stored separately — it is opaque to the rest of the system. The DB row
+contains the full path, which is what the download pre-signed URL uses.
+
+### Rationale
+
+- **Fixes the root cause.** The bug is that two concurrent requests share a
+  physical storage key. UUID-keying makes every request's storage key unique,
+  eliminating the collision by construction. The loser's compensation
+  (`removeObject`) targets its own UUID-prefixed key and cannot affect the
+  winner's object.
+- **Multi-instance safe.** Unlike an in-process lock, UUID uniqueness holds
+  across multiple JVM instances with no coordination needed.
+- **Minimal diff.** One line changes in `Document.newUpload`; all other
+  components (adapter, service, controller, tests) are unaffected.
+- **No new infrastructure.** No lock objects, no striped lock library, no
+  status state machine.
+- **Wasted work is bounded.** The losing request uploads wasted bytes to
+  MinIO, but: (a) the pre-check eliminates duplicates in the 99% non-race
+  case; (b) the DB `UNIQUE` constraint remains the authoritative backstop;
+  (c) the compensation correctly cleans up only its own object.
+
+### Consequences
+
+- `storagePath` is no longer deterministic from `(user, name)`. It is an
+  opaque internal key stored in the `minio_path` column and accessed only
+  via the `documents` table row.
+- **Spec deviation — MinIO directory structure:** the challenge spec shows
+  the bucket layout as `user/doc.pdf` (flat within the user namespace). The
+  UUID-keyed layout is `user/<uuid>/doc.pdf`, which deviates from that
+  example. The deviation is intentional and justified:
+  - The path is an **opaque internal key** — API consumers never see it
+    directly. They interact only with the upload endpoint (which returns a
+    `Location` header with the document ID) and the download endpoint (which
+    returns a pre-signed URL). The physical MinIO path is never exposed.
+  - The **user namespace is fully preserved** — all objects for a given user
+    still live under the `<user>/` prefix, matching the spec's intent.
+  - The alternative that would satisfy both spec compliance and correctness
+    (DB-first / PENDING status) requires a schema change and new
+    application-layer state management, which is disproportionate to the
+    challenge scope.
+  - This deviation is preferable to shipping a data integrity bug where a
+    concurrent duplicate upload can delete a successfully persisted document's
+    MinIO object.
+- **ADR-005 consequence superseded:** the original ADR-005 stated "storage
+  key in MinIO is exactly `<user>/<name>.pdf`, matching the documented
+  layout." The layout is now `<user>/<uuid>/<name>` for the reasons above.
+- A race test is added to `ConcurrentUploadIntegrationTest` to assert the
+  invariant: concurrent duplicate uploads must leave exactly one DB row,
+  exactly one MinIO object, and that object must be accessible via the
+  pre-signed URL of the surviving DB row.
+
+---
+
 ## Open questions
 
 ### [OPEN QUESTION #1] — Upload endpoint contract
