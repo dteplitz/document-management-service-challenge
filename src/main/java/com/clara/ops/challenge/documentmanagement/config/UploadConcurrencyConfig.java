@@ -15,12 +15,12 @@ public class UploadConcurrencyConfig {
 
   /**
    * HTTP admission gate: limits how many upload requests proceed past the filter before multipart
-   * parsing begins. Sized conservatively to keep JVM heap within the 50 MB budget under concurrent
-   * load. See ADR-008.
+   * parsing begins. Capped at 1 to ensure at most one MinIO putObject buffer (5 MB) is on-heap at a
+   * time; two concurrent buffers (10 MB) exhausted the 50 MB heap under load. See ADR-010.
    */
   @Bean("admissionSemaphore")
   public Semaphore admissionSemaphore(
-      @Value("${upload.admission.max-concurrent:2}") int maxConcurrent) {
+      @Value("${upload.admission.max-concurrent:1}") int maxConcurrent) {
     return new Semaphore(maxConcurrent, true);
   }
 

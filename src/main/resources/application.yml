@@ -81,7 +81,7 @@ upload:
   # HTTP admission gate — limits requests past the filter before multipart parsing begins.
   # Keeps heap bounded under concurrent load. See ADR-008.
   admission:
-    max-concurrent: 2
+    max-concurrent: 1
     acquire-timeout-seconds: 15
   storage:
     # Maximum concurrent MinIO uploads. Each slot consumes ~5 MB of heap (one part buffer).
