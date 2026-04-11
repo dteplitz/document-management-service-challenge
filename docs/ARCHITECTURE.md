@@ -401,22 +401,22 @@ Large-file streaming (up to 500MB) and peak memory are validated by
 All configuration is externalized. The application reads these environment
 variables:
 
-|               Variable               |      Default      |     Consumer     |                    Description                     |
-|--------------------------------------|-------------------|------------------|----------------------------------------------------|
-| `SPRING_DATASOURCE_URL`              | (required)        | Hikari / JPA     | JDBC URL for PostgreSQL                            |
-| `SPRING_DATASOURCE_USERNAME`         | (required)        | Hikari           | DB username                                        |
-| `SPRING_DATASOURCE_PASSWORD`         | (required)        | Hikari           | DB password                                        |
-| `SERVER_PORT`                        | `8080`            | Tomcat           | HTTP port                                          |
-| `MINIO_ENDPOINT`                     | (required)        | MinIO client     | MinIO server URL (e.g. `http://minio:9000`)        |
-| `MINIO_ACCESS_KEY`                   | (required)        | MinIO client     | Service-account access key                         |
-| `MINIO_SECRET_KEY`                   | (required)        | MinIO client     | Service-account secret key                         |
-| `MINIO_BUCKET`                       | `document-bucket` | MinIO client     | Bucket name for stored objects                     |
-| `MINIO_REGION`                       | `us-east-1`       | MinIO client     | Region for AWS Signature V4 pre-signed URL signing |
-| `MINIO_PRESIGNED_URL_EXPIRY_SECONDS` | `900`             | MinIO adapter    | Pre-signed URL TTL in seconds (default: 15 min)    |
-| `UPLOAD_ADMISSION_MAX_CONCURRENT`    | `1`               | Admission filter | Max concurrent uploads past the admission gate     |
-| `UPLOAD_ADMISSION_ACQUIRE_TIMEOUT_SECONDS` | `15`        | Admission filter | Seconds to wait for an admission slot before 503   |
-| `UPLOAD_STORAGE_MAX_CONCURRENT`      | `3`               | Upload service   | Max concurrent MinIO writes (semaphore size)       |
-| `JAVA_OPTS`                          | (set in Docker)   | JVM              | JVM flags including `-Xmx50m -Xss256k`             |
+|                  Variable                  |      Default      |     Consumer     |                    Description                     |
+|--------------------------------------------|-------------------|------------------|----------------------------------------------------|
+| `SPRING_DATASOURCE_URL`                    | (required)        | Hikari / JPA     | JDBC URL for PostgreSQL                            |
+| `SPRING_DATASOURCE_USERNAME`               | (required)        | Hikari           | DB username                                        |
+| `SPRING_DATASOURCE_PASSWORD`               | (required)        | Hikari           | DB password                                        |
+| `SERVER_PORT`                              | `8080`            | Tomcat           | HTTP port                                          |
+| `MINIO_ENDPOINT`                           | (required)        | MinIO client     | MinIO server URL (e.g. `http://minio:9000`)        |
+| `MINIO_ACCESS_KEY`                         | (required)        | MinIO client     | Service-account access key                         |
+| `MINIO_SECRET_KEY`                         | (required)        | MinIO client     | Service-account secret key                         |
+| `MINIO_BUCKET`                             | `document-bucket` | MinIO client     | Bucket name for stored objects                     |
+| `MINIO_REGION`                             | `us-east-1`       | MinIO client     | Region for AWS Signature V4 pre-signed URL signing |
+| `MINIO_PRESIGNED_URL_EXPIRY_SECONDS`       | `900`             | MinIO adapter    | Pre-signed URL TTL in seconds (default: 15 min)    |
+| `UPLOAD_ADMISSION_MAX_CONCURRENT`          | `1`               | Admission filter | Max concurrent uploads past the admission gate     |
+| `UPLOAD_ADMISSION_ACQUIRE_TIMEOUT_SECONDS` | `15`              | Admission filter | Seconds to wait for an admission slot before 503   |
+| `UPLOAD_STORAGE_MAX_CONCURRENT`            | `3`               | Upload service   | Max concurrent MinIO writes (semaphore size)       |
+| `JAVA_OPTS`                                | (set in Docker)   | JVM              | JVM flags including `-Xmx50m -Xss256k`             |
 
 See `.env.example` for the full annotated template and `docker-compose.yml`
 for how variables are wired into the container.
